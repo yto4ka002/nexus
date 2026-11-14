@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background Gradient: Deep Obsidian to Dark Violet -->
+    <radialGradient id="bg-glow" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#1f1438" />
+      <stop offset="45%" stop-color="#0f0c1e" />
+      <stop offset="100%" stop-color="#06050b" />
+    </radialGradient>
+
+    <!-- Outer Rim Gradient -->
+    <linearGradient id="rim-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c084fc" />
+      <stop offset="35%" stop-color="#9333ea" />
+      <stop offset="70%" stop-color="#6b21a8" />
+      <stop offset="100%" stop-color="#3b0764" />
+    </linearGradient>
+
+    <!-- Core Facet Gradients -->
+    <linearGradient id="facet-top" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#f3e8ff" />
+      <stop offset="40%" stop-color="#d8b4fe" />
+      <stop offset="100%" stop-color="#a855f7" />
+    </linearGradient>
+
+    <linearGradient id="facet-left" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7" />
+      <stop offset="50%" stop-color="#7c3aed" />
+      <stop offset="100%" stop-color="#4c1d95" />
+    </linearGradient>
+
+    <linearGradient id="facet-right" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#c084fc" />
+      <stop offset="50%" stop-color="#9333ea" />
+      <stop offset="100%" stop-color="#581c87" />
+    </linearGradient>
+
+    <linearGradient id="facet-bottom" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#7c3aed" />
+      <stop offset="100%" stop-color="#2e1065" />
+    </linearGradient>
+
+    <linearGradient id="facet-n-diagonal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="30%" stop-color="#e9d5ff" />
+      <stop offset="70%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#7e22ce" />
+    </linearGradient>
+
+    <!-- Neon Glow Filter -->
+    <filter id="glow-heavy" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="32" result="blur1" />
+      <feGaussianBlur stdDeviation="16" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur1" />
+        <feMergeNode in="blur2" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="glow-subtle" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Base Squircle with Deep Obsidian Background -->
+  <rect x="36" y="36" width="952" height="952" rx="224" ry="224" fill="url(#bg-glow)" stroke="url(#rim-gradient)" stroke-width="10" />
+
+  <!-- Inner Ambient Luminous Aura -->
+  <circle cx="512" cy="512" r="340" fill="#9333ea" opacity="0.14" filter="url(#glow-heavy)" />
+  <circle cx="512" cy="460" r="180" fill="#c084fc" opacity="0.18" filter="url(#glow-heavy)" />
+
+  <!-- Cybernetic Hexagonal Grid Ring -->
+  <polygon points="512,170 808,341 808,683 512,854 216,683 216,341" fill="none" stroke="#7c3aed" stroke-width="3" stroke-dasharray="14 10" opacity="0.45" />
+  <polygon points="512,216 768,364 768,660 512,808 256,660 256,364" fill="none" stroke="#a855f7" stroke-width="1.5" opacity="0.3" />
+
+  <!-- Hex Vertex Tech Nodes -->
+  <circle cx="512" cy="170" r="10" fill="#c084fc" filter="url(#glow-subtle)" />
+  <circle cx="808" cy="341" r="10" fill="#a855f7" filter="url(#glow-subtle)" />
+  <circle cx="808" cy="683" r="10" fill="#9333ea" filter="url(#glow-subtle)" />
+  <circle cx="512" cy="854" r="10" fill="#7c3aed" filter="url(#glow-subtle)" />
+  <circle cx="216" cy="683" r="10" fill="#9333ea" filter="url(#glow-subtle)" />
+  <circle cx="216" cy="341" r="10" fill="#a855f7" filter="url(#glow-subtle)" />
+
+  <!-- Corner Tech Accent Brackets -->
+  <path d="M 160 240 L 160 160 L 240 160" fill="none" stroke="#9333ea" stroke-width="5" stroke-linecap="round" opacity="0.4" />
+  <path d="M 864 240 L 864 160 L 784 160" fill="none" stroke="#9333ea" stroke-width="5" stroke-linecap="round" opacity="0.4" />
+  <path d="M 160 784 L 160 864 L 240 864" fill="none" stroke="#9333ea" stroke-width="5" stroke-linecap="round" opacity="0.4" />
+  <path d="M 864 784 L 864 864 L 784 864" fill="none" stroke="#9333ea" stroke-width="5" stroke-linecap="round" opacity="0.4" />
+
+  <!-- Central NEXUS Futuristic "N" Prism Core -->
+  <g filter="url(#glow-subtle)">
+    <!-- Left Pillar of N -->
+    <path d="M 330 300 L 415 250 L 415 724 L 330 774 Z" fill="url(#facet-left)" stroke="#c084fc" stroke-width="2.5" />
+    
+    <!-- Right Pillar of N -->
+    <path d="M 609 250 L 694 300 L 694 774 L 609 724 Z" fill="url(#facet-right)" stroke="#c084fc" stroke-width="2.5" />
+    
+    <!-- Central Powerful Diagonal of N -->
+    <path d="M 415 250 L 500 250 L 694 670 L 609 670 Z" fill="url(#facet-n-diagonal)" stroke="#ffffff" stroke-width="2" />
+
+    <!-- Isometric Diamond Facet Overlays creating Crystal Shading -->
+    <!-- Top Cap Diamond -->
+    <polygon points="512,230 610,285 512,340 414,285" fill="url(#facet-top)" opacity="0.9" />
+    
+    <!-- Center Radiant Core Hub -->
+    <polygon points="512,440 580,512 512,584 444,512" fill="#ffffff" filter="url(#glow-heavy)" opacity="0.95" />
+    <polygon points="512,460 560,512 512,564 464,512" fill="#f5d0fe" />
+    
+    <!-- Tech Core Cross Lines -->
+    <line x1="512" y1="360" x2="512" y2="664" stroke="#ffffff" stroke-width="3" opacity="0.75" />
+    <line x1="380" y1="512" x2="644" y2="512" stroke="#ffffff" stroke-width="3" opacity="0.75" />
+  </g>
+
+  <!-- Bottom Accent Tech Bar -->
+  <g opacity="0.8">
+    <rect x="424" y="805" width="176" height="6" rx="3" fill="#a855f7" />
+    <circle cx="400" cy="808" r="4" fill="#c084fc" />
+    <circle cx="624" cy="808" r="4" fill="#c084fc" />
+  </g>
+</svg>

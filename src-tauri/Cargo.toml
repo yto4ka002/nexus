@@ -1,0 +1,32 @@
+[package]
+name = "nexus"
+version = "1.0.0"
+description = "NEXUS Desktop Command & Control Center"
+authors = ["NEXUS Team"]
+edition = "2021"
+rust-version = "1.78"
+
+[lib]
+name = "nexus_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.0.0", features = ["tray-icon", "image-png", "image-ico"] }
+tauri-plugin-log = "2.0.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
+sysinfo = "0.31"
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+tokio = { version = "1", features = ["full"] }
+open = "5"
+arboard = "3"
+tauri-plugin-global-shortcut = "2.0.0"
+dirs = "5"
+futures-util = "0.3"
+
