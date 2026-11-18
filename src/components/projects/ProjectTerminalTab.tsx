@@ -9,6 +9,8 @@ import {
   AlertCircle,
   Maximize2,
   Minimize2,
+  Minus,
+  X,
 } from 'lucide-react';
 import * as api from '../../api';
 import type { Project } from '../../types';
@@ -152,13 +154,13 @@ export const ProjectTerminalTab: React.FC<ProjectTerminalTabProps> = ({
         ...(isFullscreen
           ? {
               position: 'fixed',
-              top: 38,
+              top: 0,
               left: 0,
               right: 0,
               bottom: 0,
-              zIndex: 9999,
+              zIndex: 999999,
               width: '100vw',
-              height: 'calc(100vh - 38px)',
+              height: '100vh',
               borderRadius: 0,
               border: 'none',
             }
@@ -274,6 +276,46 @@ export const ProjectTerminalTab: React.FC<ProjectTerminalTabProps> = ({
             {isFullscreen ? <Minimize2 size={12} color="#8B6CFF" /> : <Maximize2 size={12} />}
             <span>{isFullscreen ? (isRu ? 'Свернуть' : 'Exit') : (isRu ? 'Фулл экран' : 'Fullscreen')}</span>
           </button>
+
+          {/* Fullscreen Native Window Controls */}
+          {isFullscreen && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 6, borderLeft: '1px solid #25252D', paddingLeft: 6 }}>
+              <button
+                type="button"
+                onClick={() => api.windowMinimize()}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#92929F',
+                  cursor: 'pointer',
+                  padding: '4px 6px',
+                  borderRadius: 4,
+                  display: 'flex',
+                }}
+                title={isRu ? 'Свернуть окно' : 'Minimize window'}
+              >
+                <Minus size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => api.windowClose()}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#92929F',
+                  cursor: 'pointer',
+                  padding: '4px 6px',
+                  borderRadius: 4,
+                  display: 'flex',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#92929F')}
+                title={isRu ? 'Закрыть' : 'Close'}
+              >
+                <X size={13} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

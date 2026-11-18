@@ -15,6 +15,7 @@ import {
   Maximize2,
   Minimize2,
   X,
+  Minus,
   Sidebar,
   RotateCw,
   ChevronRight,
@@ -357,13 +358,13 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
         ...(isFullscreen
           ? {
               position: 'fixed',
-              top: 38,
+              top: 0,
               left: 0,
               right: 0,
               bottom: 0,
-              zIndex: 9999,
+              zIndex: 999999,
               width: '100vw',
-              height: 'calc(100vh - 38px)',
+              height: '100vh',
               borderRadius: 0,
               border: 'none',
               boxShadow: 'none',
@@ -602,41 +603,82 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
             {isFullscreen ? <Minimize2 size={13} color="#8B6CFF" /> : <Maximize2 size={13} />}
             <span>{isFullscreen ? (isRu ? 'Свернуть' : 'Exit') : (isRu ? 'Фулл экран' : 'Fullscreen')}</span>
           </button>
+
+          {/* Fullscreen Native Window Controls */}
+          {isFullscreen && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 6, borderLeft: '1px solid #25252D', paddingLeft: 6 }}>
+              <button
+                type="button"
+                onClick={() => api.windowMinimize()}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#92929F',
+                  cursor: 'pointer',
+                  padding: '4px 6px',
+                  borderRadius: 4,
+                  display: 'flex',
+                }}
+                title={isRu ? 'Свернуть окно' : 'Minimize window'}
+              >
+                <Minus size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => api.windowClose()}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#92929F',
+                  cursor: 'pointer',
+                  padding: '4px 6px',
+                  borderRadius: 4,
+                  display: 'flex',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#92929F')}
+                title={isRu ? 'Закрыть' : 'Close'}
+              >
+                <X size={13} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* 2. MAIN VS CODE WORKSPACE: SIDEBAR + EDITOR GROUP */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        {/* Left Explorer Sidebar */}
+        {/* Left Explorer Sidebar (Compact) */}
         {isSidebarOpen && (
           <div
             style={{
-              width: 230,
+              width: isFullscreen ? 160 : 180,
               backgroundColor: '#111115',
               borderRight: '1px solid #25252D',
               display: 'flex',
               flexDirection: 'column',
               flexShrink: 0,
               userSelect: 'none',
+              transition: 'width 0.15s ease',
             }}
           >
             {/* Sidebar Title */}
             <div
               style={{
-                height: 32,
+                height: 30,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '0 12px',
+                padding: '0 8px',
                 borderBottom: '1px solid #25252D',
-                fontSize: '0.7rem',
+                fontSize: '0.68rem',
                 fontWeight: 700,
                 color: '#92929F',
                 letterSpacing: 0.5,
                 textTransform: 'uppercase',
               }}
             >
-              <span>{isRu ? 'Проводник' : 'Explorer'}</span>
+              <span>{isRu ? 'Файлы' : 'Explorer'}</span>
               <div style={{ display: 'flex', gap: 4 }}>
                 <button
                   type="button"
@@ -661,21 +703,23 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 5,
-                padding: '6px 12px',
-                fontSize: '0.72rem',
+                gap: 4,
+                padding: '4px 8px',
+                fontSize: '0.68rem',
                 fontWeight: 700,
                 color: '#A78BFA',
                 backgroundColor: '#16161C',
                 borderBottom: '1px solid #25252D',
               }}
             >
-              <ChevronRight size={12} />
-              <span>{project.title.toUpperCase()}</span>
+              <ChevronRight size={11} />
+              <span style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                {project.title.toUpperCase()}
+              </span>
             </div>
 
             {/* File List Tree */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '3px 0' }}>
               {files.map(file => {
                 const isActive = file.id === (activeFile?.id || '');
                 return (
@@ -686,9 +730,9 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      padding: '5px 12px',
+                      padding: '4px 8px',
                       cursor: 'pointer',
-                      fontSize: '0.78rem',
+                      fontSize: '0.74rem',
                       color: isActive ? '#F1F1F5' : '#92929F',
                       backgroundColor: isActive ? '#16161C' : 'transparent',
                       borderLeft: isActive ? '2px solid #8B6CFF' : '2px solid transparent',
@@ -701,7 +745,7 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
                       if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
                       {getFileIcon(file.name)}
                       <span style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                         {file.name}
