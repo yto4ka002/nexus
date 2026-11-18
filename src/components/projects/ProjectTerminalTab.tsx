@@ -7,6 +7,8 @@ import {
   RotateCw,
   CheckCircle2,
   AlertCircle,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import * as api from '../../api';
 import type { Project } from '../../types';
@@ -34,7 +36,22 @@ export const ProjectTerminalTab: React.FC<ProjectTerminalTabProps> = ({
   const [history, setHistory] = useState<CommandHistoryItem[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [historyIdx, setHistoryIdx] = useState<number>(-1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const outputEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+      if (e.key === 'F11') {
+        e.preventDefault();
+        setIsFullscreen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isFullscreen]);
 
   const projectDir = project.repo_path || 'C:\\Workspace\\' + project.title;
 
@@ -126,11 +143,24 @@ export const ProjectTerminalTab: React.FC<ProjectTerminalTabProps> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: 'calc(100vh - 165px)',
         backgroundColor: '#0B0B0E',
-        border: '1px solid #25252D',
-        borderRadius: 8,
+        border: isFullscreen ? 'none' : '1px solid #25252D',
+        borderRadius: isFullscreen ? 0 : 8,
         overflow: 'hidden',
+        transition: 'all 0.18s ease',
+        ...(isFullscreen
+          ? {
+              position: 'fixed',
+              top: 38,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 900,
+              height: 'calc(100vh - 38px)',
+            }
+          : {
+              height: 'calc(100vh - 165px)',
+            }),
       }}
     >
       {/* Terminal Top Bar */}
@@ -175,6 +205,29 @@ export const ProjectTerminalTab: React.FC<ProjectTerminalTabProps> = ({
               <span>{isRu ? 'Очистить' : 'Clear'}</span>
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '3px 9px',
+              backgroundColor: isFullscreen ? 'rgba(139, 108, 255, 0.18)' : '#16161C',
+              border: `1px solid ${isFullscreen ? '#8B6CFF' : '#25252D'}`,
+              borderRadius: 4,
+              color: isFullscreen ? '#F1F1F5' : '#92929F',
+              cursor: 'pointer',
+              fontSize: '0.72rem',
+              fontWeight: 500,
+              transition: 'all 0.15s ease',
+            }}
+            title={isFullscreen ? (isRu ? 'Выйти из полноэкранного режима (Esc / F11)' : 'Exit Fullscreen (Esc / F11)') : (isRu ? 'Открыть на весь экран (F11)' : 'Fullscreen (F11)')}
+          >
+            {isFullscreen ? <Minimize2 size={12} color="#8B6CFF" /> : <Maximize2 size={12} />}
+            <span>{isFullscreen ? (isRu ? 'Свернуть' : 'Exit') : (isRu ? 'Фулл экран' : 'Fullscreen')}</span>
+          </button>
         </div>
       </div>
 
