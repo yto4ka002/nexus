@@ -23,6 +23,7 @@ export interface Project {
   links?: string;
   repo_path?: string;
   git_remote?: string;
+  git_branch?: string;
   code_files?: string;
   coworking_data?: string;
   ai_context?: string;

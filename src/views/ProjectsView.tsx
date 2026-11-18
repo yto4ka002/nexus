@@ -917,68 +917,122 @@ export const ProjectsView: React.FC = () => {
 
           {/* TAB: Settings & Danger Zone */}
           {activeTab === 'settings' && (
-            <div style={{ maxWidth: 650, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div
                 style={{
-                  backgroundColor: '#0c0b14',
-                  border: '1px solid rgba(139, 92, 246, 0.18)',
-                  borderRadius: 11,
+                  backgroundColor: '#111115',
+                  border: '1px solid #25252D',
+                  borderRadius: 10,
                   padding: 24,
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 16,
+                  gap: 18,
                 }}
               >
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>
-                  {isRu ? 'Параметры проекта' : 'Project Settings'}
-                </h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid #25252D', paddingBottom: 14 }}>
+                  <Settings size={18} color="#8B6CFF" />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#F1F1F5', margin: 0 }}>
+                    {isRu ? 'Параметры проекта' : 'Project Settings'}
+                  </h3>
+                </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div>
-                    <label className="form-label">{isRu ? 'Название проекта' : 'Title'}</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+                    <label className="form-label" style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#92929F', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>
+                      {isRu ? 'Название проекта' : 'Title'}
+                    </label>
                     <input
                       type="text"
                       className="form-input"
+                      style={{ width: '100%', boxSizing: 'border-box', backgroundColor: '#16161C', border: '1px solid #25252D', color: '#F1F1F5', padding: '9px 12px', borderRadius: 6 }}
                       value={activeProject.title}
                       readOnly
                     />
                   </div>
 
-                  <div>
-                    <label className="form-label">{isRu ? 'Описание' : 'Description'}</label>
+                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+                    <label className="form-label" style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#92929F', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>
+                      {isRu ? 'Описание' : 'Description'}
+                    </label>
                     <textarea
                       className="form-input"
                       rows={3}
-                      value={activeProject.description || ''}
+                      style={{ width: '100%', boxSizing: 'border-box', backgroundColor: '#16161C', border: '1px solid #25252D', color: '#F1F1F5', padding: '9px 12px', borderRadius: 6, resize: 'vertical' }}
+                      value={activeProject.description || (isRu ? 'Описание не указано' : 'No description provided')}
                       readOnly
                     />
                   </div>
 
                   {activeProject.git_remote && (
-                    <div>
-                      <label className="form-label">{isRu ? 'Git Remote URL' : 'Git Remote'}</label>
+                    <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+                      <label className="form-label" style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#92929F', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>
+                        {isRu ? 'Git Remote URL' : 'Git Remote'}
+                      </label>
                       <input
                         type="text"
                         className="form-input"
+                        style={{ width: '100%', boxSizing: 'border-box', backgroundColor: '#16161C', border: '1px solid #25252D', color: '#F1F1F5', padding: '9px 12px', borderRadius: 6 }}
                         value={activeProject.git_remote}
                         readOnly
                       />
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+                  <div style={{ display: 'flex', gap: 12, marginTop: 10, paddingTop: 14, borderTop: '1px solid #25252D' }}>
                     <button
+                      type="button"
                       onClick={() => handleEditProject(activeProject)}
-                      className="btn btn-secondary btn-sm"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 7,
+                        padding: '8px 16px',
+                        backgroundColor: '#16161C',
+                        border: '1px solid #25252D',
+                        borderRadius: 6,
+                        color: '#F1F1F5',
+                        fontSize: '0.82rem',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.borderColor = '#8B6CFF';
+                        e.currentTarget.style.color = '#fff';
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.borderColor = '#25252D';
+                        e.currentTarget.style.color = '#F1F1F5';
+                      }}
                     >
-                      <Edit2 size={13} />
+                      <Edit2 size={14} color="#8B6CFF" />
                       <span>{isRu ? 'Редактировать свойства' : 'Edit details'}</span>
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleDeleteProject(activeProject)}
-                      className="btn btn-danger btn-sm"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 7,
+                        padding: '8px 16px',
+                        backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                        border: '1px solid rgba(239, 68, 68, 0.35)',
+                        borderRadius: 6,
+                        color: '#f87171',
+                        fontSize: '0.82rem',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.22)';
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)';
+                      }}
                     >
-                      <Trash2 size={13} />
+                      <Trash2 size={14} />
                       <span>{isRu ? 'Удалить проект' : 'Delete Project'}</span>
                     </button>
                   </div>
@@ -1004,7 +1058,7 @@ export const ProjectsView: React.FC = () => {
             </h3>
 
             <form onSubmit={handleSaveProject} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
+              <div className="form-group">
                 <label className="form-label">{isRu ? 'Название проекта' : 'Title'}</label>
                 <input
                   type="text"
@@ -1015,7 +1069,7 @@ export const ProjectsView: React.FC = () => {
                 />
               </div>
 
-              <div>
+              <div className="form-group">
                 <label className="form-label">{isRu ? 'Описание' : 'Description'}</label>
                 <textarea
                   className="form-input"
@@ -1026,7 +1080,7 @@ export const ProjectsView: React.FC = () => {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
+                <div className="form-group">
                   <label className="form-label">{isRu ? 'Статус' : 'Status'}</label>
                   <select
                     className="form-input"
@@ -1040,7 +1094,7 @@ export const ProjectsView: React.FC = () => {
                   </select>
                 </div>
 
-                <div>
+                <div className="form-group">
                   <label className="form-label">{isRu ? 'Цвет обложки' : 'Cover Color'}</label>
                   <input
                     type="color"
@@ -1082,7 +1136,7 @@ export const ProjectsView: React.FC = () => {
             </h3>
 
             <form onSubmit={handleSaveTask} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
+              <div className="form-group">
                 <label className="form-label">{isRu ? 'Название задачи' : 'Title'}</label>
                 <input
                   type="text"
@@ -1094,7 +1148,7 @@ export const ProjectsView: React.FC = () => {
                 />
               </div>
 
-              <div>
+              <div className="form-group">
                 <label className="form-label">{isRu ? 'Описание / Детали' : 'Description'}</label>
                 <textarea
                   className="form-input"
@@ -1104,7 +1158,7 @@ export const ProjectsView: React.FC = () => {
                 />
               </div>
 
-              <div>
+              <div className="form-group">
                 <label className="form-label">{isRu ? 'Приоритет' : 'Priority'}</label>
                 <select
                   className="form-input"

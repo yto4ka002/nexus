@@ -8,15 +8,20 @@ import {
   GitBranch,
   Code,
   FileText,
-  Terminal,
+  Terminal as TerminalIcon,
   Sparkles,
   Check,
   Folder,
   Maximize2,
   Minimize2,
+  X,
+  Sidebar,
+  RotateCw,
+  ChevronRight,
 } from 'lucide-react';
 import type { Project, CodeFile } from '../../types';
 import { useApp } from '../../context/AppContext';
+import * as api from '../../api';
 
 interface CodeStudioTabProps {
   project: Project;
@@ -100,6 +105,16 @@ High performance local desktop module with reactive live preview.
   },
 ];
 
+interface TerminalLogItem {
+  id: string;
+  command: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  durationMs: number;
+  timestamp: string;
+}
+
 export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
   project,
   files,
@@ -115,12 +130,27 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
   const { language, addToast } = useApp();
   const isRu = language === 'ru';
 
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [isTerminalMaximized, setIsTerminalMaximized] = useState(false);
   const [isNewFileModalOpen, setNewFileModalOpen] = useState(false);
   const [newFileName, setNewFileName] = useState('');
   const [newFileLang, setNewFileLang] = useState('javascript');
   const [isSavedRecently, setIsSavedRecently] = useState(false);
   const [showTemplatesDropdown, setShowTemplatesDropdown] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+
+  // Terminal state inside Code Studio
+  const [terminalInput, setTerminalInput] = useState('');
+  const [terminalHistory, setTerminalHistory] = useState<TerminalLogItem[]>([]);
+  const [terminalHistoryIdx, setTerminalHistoryIdx] = useState<number>(-1);
+  const [isTerminalRunning, setIsTerminalRunning] = useState(false);
+  const terminalEndRef = useRef<HTMLDivElement>(null);
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const activeFile = files.find(f => f.id === activeFileId) || files[0];
+  const projectDir = project.repo_path || 'C:\\Workspace\\' + project.title;
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -131,24 +161,48 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
         e.preventDefault();
         setIsFullscreen(prev => !prev);
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+        e.preventDefault();
+        setIsTerminalOpen(prev => !prev);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        e.preventDefault();
+        setIsSidebarOpen(prev => !prev);
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [isFullscreen]);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const activeFile = files.find(f => f.id === activeFileId) || files[0];
+  useEffect(() => {
+    if (isTerminalOpen) {
+      terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [terminalHistory, isTerminalOpen]);
 
   // Calculate lines for gutter
   const lineCount = activeFile ? activeFile.content.split('\n').length : 1;
   const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
 
+  const updateCursorPosition = (textarea: HTMLTextAreaElement) => {
+    const selStart = textarea.selectionStart;
+    const textBefore = textarea.value.substring(0, selStart);
+    const lines = textBefore.split('\n');
+    const currentLine = lines.length;
+    const currentCol = lines[lines.length - 1].length + 1;
+    setCursorPos({ line: currentLine, col: currentCol });
+  };
+
   const getFileIcon = (fileName: string) => {
     if (fileName.endsWith('.html')) return <Code size={14} color="#f97316" />;
     if (fileName.endsWith('.css')) return <FileText size={14} color="#38bdf8" />;
-    if (fileName.endsWith('.js') || fileName.endsWith('.ts')) return <Terminal size={14} color="#fbbf24" />;
+    if (fileName.endsWith('.js') || fileName.endsWith('.ts') || fileName.endsWith('.tsx') || fileName.endsWith('.jsx')) {
+      return <TerminalIcon size={14} color="#fbbf24" />;
+    }
     if (fileName.endsWith('.json')) return <FileCode size={14} color="#a855f7" />;
     if (fileName.endsWith('.md')) return <FileCode size={14} color="#34d399" />;
+    if (fileName.endsWith('.rs')) return <FileCode size={14} color="#f97316" />;
+    if (fileName.endsWith('.py')) return <FileCode size={14} color="#60a5fa" />;
     return <FileCode size={14} color="#94a3b8" />;
   };
 
@@ -168,6 +222,7 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
 
       setTimeout(() => {
         textarea.selectionStart = textarea.selectionEnd = start + 2;
+        updateCursorPosition(textarea);
       }, 0);
     }
 
@@ -194,8 +249,12 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
     else if (name.endsWith('.css')) lang = 'css';
     else if (name.endsWith('.js')) lang = 'javascript';
     else if (name.endsWith('.ts')) lang = 'typescript';
+    else if (name.endsWith('.tsx')) lang = 'typescript';
+    else if (name.endsWith('.jsx')) lang = 'javascript';
     else if (name.endsWith('.md')) lang = 'markdown';
     else if (name.endsWith('.json')) lang = 'json';
+    else if (name.endsWith('.py')) lang = 'python';
+    else if (name.endsWith('.rs')) lang = 'rust';
     else {
       if (lang === 'html') name += '.html';
       else if (lang === 'css') name += '.css';
@@ -216,13 +275,85 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
     addToast(isRu ? 'Шаблон добавлен' : 'Template Added', tmpl.name, 'success');
   };
 
+  // Terminal commands inside VS Code panel
+  const handleRunTerminalCommand = async (cmdToRun?: string) => {
+    const cmd = (cmdToRun || terminalInput).trim();
+    if (!cmd || isTerminalRunning) return;
+
+    setIsTerminalRunning(true);
+    setTerminalInput('');
+    setTerminalHistoryIdx(-1);
+
+    const now = new Date().toLocaleTimeString();
+
+    try {
+      const res = await api.runProjectTerminal(project.repo_path, cmd);
+      const item: TerminalLogItem = {
+        id: `term-${Date.now()}`,
+        command: cmd,
+        stdout: res.stdout,
+        stderr: res.stderr,
+        exitCode: res.exit_code,
+        durationMs: res.duration_ms,
+        timestamp: now,
+      };
+
+      setTerminalHistory(prev => [...prev, item]);
+      api.logActivity(project.id, 'terminal', `Команда терминала: ${cmd}`, `exit: ${res.exit_code}`);
+    } catch (err: any) {
+      setTerminalHistory(prev => [
+        ...prev,
+        {
+          id: `term-${Date.now()}`,
+          command: cmd,
+          stdout: '',
+          stderr: String(err),
+          exitCode: 1,
+          durationMs: 0,
+          timestamp: now,
+        },
+      ]);
+    } finally {
+      setIsTerminalRunning(false);
+    }
+  };
+
+  const handleTerminalInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleRunTerminalCommand();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (terminalHistory.length > 0) {
+        const nextIdx = terminalHistoryIdx === -1 ? terminalHistory.length - 1 : Math.max(0, terminalHistoryIdx - 1);
+        setTerminalHistoryIdx(nextIdx);
+        setTerminalInput(terminalHistory[nextIdx].command);
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (terminalHistoryIdx !== -1) {
+        const nextIdx = terminalHistoryIdx + 1;
+        if (nextIdx < terminalHistory.length) {
+          setTerminalHistoryIdx(nextIdx);
+          setTerminalInput(terminalHistory[nextIdx].command);
+        } else {
+          setTerminalHistoryIdx(-1);
+          setTerminalInput('');
+        }
+      }
+    }
+  };
+
+  const presets = ['git status', 'git log -n 3 --oneline', 'npm run dev', 'dir'];
+
   return (
     <div
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
-        transition: 'all 0.18s ease',
+        backgroundColor: '#0B0B0E',
+        color: '#F1F1F5',
+        overflow: 'hidden',
+        transition: 'all 0.15s ease',
         ...(isFullscreen
           ? {
               position: 'fixed',
@@ -230,61 +361,85 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
               left: 0,
               right: 0,
               bottom: 0,
-              zIndex: 900,
-              backgroundColor: '#0B0B0E',
-              padding: 12,
+              zIndex: 9999,
+              width: '100vw',
               height: 'calc(100vh - 38px)',
+              borderRadius: 0,
+              border: 'none',
+              boxShadow: 'none',
             }
           : {
-              height: 'calc(100vh - 280px)',
-              minHeight: 520,
+              height: 'calc(100vh - 215px)',
+              minHeight: 560,
+              borderRadius: 8,
+              border: '1px solid #25252D',
             }),
       }}
     >
-      {/* Top Studio Action Bar */}
+      {/* 1. TOP VS CODE WORKSPACE HEADER */}
       <div
-        className="card"
         style={{
-          padding: '10px 16px',
+          height: 36,
+          backgroundColor: '#111115',
+          borderBottom: '1px solid #25252D',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 12,
-          backgroundColor: '#111115',
-          border: '1px solid #25252D',
+          padding: '0 10px',
+          userSelect: 'none',
+          flexShrink: 0,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Folder size={17} color="#c084fc" />
-          <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>
-            {project.title} &bull; {isRu ? 'Редактор кода' : 'Code Studio'}
-          </span>
-          {project.repo_path && (
-            <span
-              style={{
-                fontSize: '0.72rem',
-                color: 'var(--text-dim)',
-                background: 'rgba(255,255,255,0.05)',
-                padding: '2px 8px',
-                borderRadius: '4px',
-              }}
-            >
-              {project.repo_path}
-            </span>
-          )}
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: isSidebarOpen ? '#8B6CFF' : '#92929F',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              padding: 4,
+              borderRadius: 4,
+            }}
+            title={isRu ? 'Переключить боковую панель (Ctrl+B)' : 'Toggle Primary Sidebar (Ctrl+B)'}
+          >
+            <Sidebar size={15} />
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', fontWeight: 600 }}>
+            <Folder size={14} color="#8B6CFF" />
+            <span style={{ color: '#F1F1F5' }}>{project.title}</span>
+            <span style={{ color: '#4b4b58' }}>&bull;</span>
+            <span style={{ color: '#92929F', fontSize: '0.74rem' }}>{projectDir}</span>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Templates dropdown */}
+        {/* Right Action Icons */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* Templates */}
           <div style={{ position: 'relative' }}>
             <button
-              className="btn btn-secondary btn-sm"
+              type="button"
               onClick={() => setShowTemplatesDropdown(!showTemplatesDropdown)}
-              style={{ fontSize: '0.8rem' }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '4px 9px',
+                backgroundColor: '#16161C',
+                border: '1px solid #25252D',
+                borderRadius: 4,
+                color: '#92929F',
+                fontSize: '0.74rem',
+                cursor: 'pointer',
+              }}
+              title={isRu ? 'Вставить готовый шаблон' : 'Insert Code Template'}
             >
-              <Sparkles size={14} color="#f59e0b" />
-              {isRu ? 'Шаблоны' : 'Templates'}
+              <Sparkles size={13} color="#f59e0b" />
+              <span>{isRu ? 'Шаблоны' : 'Templates'}</span>
             </button>
 
             {showTemplatesDropdown && (
@@ -293,74 +448,131 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
                   position: 'absolute',
                   right: 0,
                   top: '110%',
-                  zIndex: 50,
-                  backgroundColor: 'var(--bg-card)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                  minWidth: 220,
-                  padding: 6,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 4,
+                  zIndex: 200,
+                  backgroundColor: '#16161C',
+                  border: '1px solid #25252D',
+                  borderRadius: 6,
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+                  width: 230,
+                  overflow: 'hidden',
                 }}
               >
-                {TEMPLATES.map((t, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleInsertTemplate(t)}
+                {TEMPLATES.map(tmpl => (
+                  <div
+                    key={tmpl.name}
+                    onClick={() => handleInsertTemplate(tmpl)}
                     style={{
-                      textAlign: 'left',
                       padding: '8px 12px',
-                      borderRadius: 4,
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text-main)',
-                      fontSize: '0.8rem',
                       cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      transition: 'background 0.15s',
+                      borderBottom: '1px solid #25252D',
+                      fontSize: '0.78rem',
                     }}
-                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(139,92,246,0.15)')}
-                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.backgroundColor = 'rgba(139, 108, 255, 0.15)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
                   >
-                    <span>{t.name}</span>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>{t.ext}</span>
-                  </button>
+                    <div style={{ fontWeight: 600, color: '#F1F1F5' }}>{tmpl.name}</div>
+                    <div style={{ fontSize: '0.68rem', color: '#8B6CFF' }}>{tmpl.ext}</div>
+                  </div>
                 ))}
               </div>
             )}
           </div>
 
+          {/* Live Preview */}
           <button
-            className="btn btn-secondary btn-sm"
-            onClick={triggerSave}
-            style={{ fontSize: '0.8rem' }}
-          >
-            {isSavedRecently ? <Check size={14} color="#10b981" /> : <Save size={14} />}
-            {isSavedRecently ? (isRu ? 'Сохранено!' : 'Saved!') : (isRu ? 'Сохранить (Ctrl+S)' : 'Save (Ctrl+S)')}
-          </button>
-
-          <button
-            className="btn btn-primary btn-sm"
+            type="button"
             onClick={onOpenPreview}
-            style={{ fontSize: '0.8rem', background: 'linear-gradient(135deg, #10b981, #059669)' }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 9px',
+              backgroundColor: 'rgba(139, 108, 255, 0.12)',
+              border: '1px solid rgba(139, 108, 255, 0.4)',
+              borderRadius: 4,
+              color: '#A78BFA',
+              fontSize: '0.74rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+            title={isRu ? 'Запустить превью' : 'Live Preview'}
           >
-            <Play size={14} />
-            {isRu ? 'Запустить превью' : 'Live Preview'}
+            <Play size={12} fill="#8B6CFF" />
+            <span>{isRu ? 'Превью' : 'Preview'}</span>
           </button>
 
+          {/* Save All */}
           <button
-            className="btn btn-secondary btn-sm"
-            onClick={onOpenGit}
-            style={{ fontSize: '0.8rem' }}
+            type="button"
+            onClick={triggerSave}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 9px',
+              backgroundColor: '#16161C',
+              border: '1px solid #25252D',
+              borderRadius: 4,
+              color: isSavedRecently ? '#10b981' : '#92929F',
+              fontSize: '0.74rem',
+              cursor: 'pointer',
+            }}
+            title={isRu ? 'Сохранить (Ctrl+S)' : 'Save (Ctrl+S)'}
           >
-            <GitBranch size={14} color="#8B6CFF" />
-            Git
+            {isSavedRecently ? <Check size={12} color="#10b981" /> : <Save size={12} />}
+            <span>{isSavedRecently ? (isRu ? 'Сохранено' : 'Saved') : (isRu ? 'Сохранить' : 'Save')}</span>
           </button>
 
+          {/* Toggle Integrated Terminal */}
+          <button
+            type="button"
+            onClick={() => setIsTerminalOpen(!isTerminalOpen)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 9px',
+              backgroundColor: isTerminalOpen ? 'rgba(139, 108, 255, 0.2)' : '#16161C',
+              border: `1px solid ${isTerminalOpen ? '#8B6CFF' : '#25252D'}`,
+              borderRadius: 4,
+              color: isTerminalOpen ? '#F1F1F5' : '#92929F',
+              fontSize: '0.74rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+            title={isRu ? 'Терминал (Ctrl+`)' : 'Toggle Terminal Panel (Ctrl+`)'}
+          >
+            <TerminalIcon size={12} color={isTerminalOpen ? '#8B6CFF' : 'currentColor'} />
+            <span>{isRu ? 'Терминал' : 'Terminal'}</span>
+          </button>
+
+          {/* Git */}
+          <button
+            type="button"
+            onClick={onOpenGit}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 9px',
+              backgroundColor: '#16161C',
+              border: '1px solid #25252D',
+              borderRadius: 4,
+              color: '#92929F',
+              fontSize: '0.74rem',
+              cursor: 'pointer',
+            }}
+            title="Git"
+          >
+            <GitBranch size={12} />
+            <span>Git</span>
+          </button>
+
+          {/* Fullscreen Toggle (VS Code Style) */}
           <button
             type="button"
             onClick={() => setIsFullscreen(!isFullscreen)}
@@ -368,17 +580,24 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: 5,
-              padding: '5px 12px',
-              backgroundColor: isFullscreen ? 'rgba(139, 108, 255, 0.18)' : '#16161C',
+              padding: '4px 10px',
+              backgroundColor: isFullscreen ? 'rgba(139, 108, 255, 0.25)' : '#16161C',
               border: `1px solid ${isFullscreen ? '#8B6CFF' : '#25252D'}`,
-              borderRadius: 5,
+              borderRadius: 4,
               color: isFullscreen ? '#F1F1F5' : '#92929F',
-              fontSize: '0.78rem',
-              fontWeight: 500,
+              fontSize: '0.74rem',
+              fontWeight: 600,
               cursor: 'pointer',
-              transition: 'all 0.15s ease',
             }}
-            title={isFullscreen ? (isRu ? 'Выйти из полноэкранного режима (Esc / F11)' : 'Exit Fullscreen (Esc / F11)') : (isRu ? 'Открыть на весь экран (F11)' : 'Fullscreen (F11)')}
+            title={
+              isFullscreen
+                ? isRu
+                  ? 'Выйти из полноэкранного режима (Esc / F11)'
+                  : 'Exit Fullscreen (Esc / F11)'
+                : isRu
+                ? 'На весь экран в стиле Visual Studio (F11)'
+                : 'Fullscreen IDE (F11)'
+            }
           >
             {isFullscreen ? <Minimize2 size={13} color="#8B6CFF" /> : <Maximize2 size={13} />}
             <span>{isFullscreen ? (isRu ? 'Свернуть' : 'Exit') : (isRu ? 'Фулл экран' : 'Fullscreen')}</span>
@@ -386,115 +605,150 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
         </div>
       </div>
 
-      {/* Main Studio Body: File Tree + Code Editor */}
-      <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0 }}>
+      {/* 2. MAIN VS CODE WORKSPACE: SIDEBAR + EDITOR GROUP */}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {/* Left Explorer Sidebar */}
-        <div
-          className="card"
-          style={{
-            width: 220,
-            padding: 12,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-            backgroundColor: 'var(--bg-surface)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              {isRu ? 'Файлы проекта' : 'Project Files'}
-            </span>
-            <button
-              className="btn-icon"
-              style={{ width: 24, height: 24 }}
-              onClick={() => setNewFileModalOpen(true)}
-              title={isRu ? 'Создать файл' : 'New File'}
+        {isSidebarOpen && (
+          <div
+            style={{
+              width: 230,
+              backgroundColor: '#111115',
+              borderRight: '1px solid #25252D',
+              display: 'flex',
+              flexDirection: 'column',
+              flexShrink: 0,
+              userSelect: 'none',
+            }}
+          >
+            {/* Sidebar Title */}
+            <div
+              style={{
+                height: 32,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0 12px',
+                borderBottom: '1px solid #25252D',
+                fontSize: '0.7rem',
+                fontWeight: 700,
+                color: '#92929F',
+                letterSpacing: 0.5,
+                textTransform: 'uppercase',
+              }}
             >
-              <FilePlus size={14} color="#a78bfa" />
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, overflowY: 'auto', flex: 1 }}>
-            {files.map(file => {
-              const isActive = file.id === (activeFile?.id || '');
-              return (
-                <div
-                  key={file.id}
-                  onClick={() => onSelectFile(file.id)}
+              <span>{isRu ? 'Проводник' : 'Explorer'}</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => setNewFileModalOpen(true)}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '6px 10px',
-                    borderRadius: 'var(--radius-md)',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#92929F',
                     cursor: 'pointer',
-                    backgroundColor: isActive ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
-                    border: isActive ? '1px solid rgba(139, 92, 246, 0.4)' : '1px solid transparent',
-                    color: isActive ? '#fff' : 'var(--text-muted)',
-                    fontSize: '0.82rem',
-                    transition: 'all 0.15s ease',
+                    padding: 2,
+                    display: 'flex',
                   }}
-                  onMouseEnter={e => {
-                    if (!isActive) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
-                  }}
-                  onMouseLeave={e => {
-                    if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
-                  }}
+                  title={isRu ? 'Новый файл' : 'New File'}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
-                    {getFileIcon(file.name)}
-                    <span style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                      {file.name}
-                    </span>
+                  <FilePlus size={13} />
+                </button>
+              </div>
+            </div>
+
+            {/* Folder section header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '6px 12px',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                color: '#A78BFA',
+                backgroundColor: '#16161C',
+                borderBottom: '1px solid #25252D',
+              }}
+            >
+              <ChevronRight size={12} />
+              <span>{project.title.toUpperCase()}</span>
+            </div>
+
+            {/* File List Tree */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+              {files.map(file => {
+                const isActive = file.id === (activeFile?.id || '');
+                return (
+                  <div
+                    key={file.id}
+                    onClick={() => onSelectFile(file.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '5px 12px',
+                      cursor: 'pointer',
+                      fontSize: '0.78rem',
+                      color: isActive ? '#F1F1F5' : '#92929F',
+                      backgroundColor: isActive ? '#16161C' : 'transparent',
+                      borderLeft: isActive ? '2px solid #8B6CFF' : '2px solid transparent',
+                      transition: 'background-color 0.1s ease',
+                    }}
+                    onMouseEnter={e => {
+                      if (!isActive) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.03)';
+                    }}
+                    onMouseLeave={e => {
+                      if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, overflow: 'hidden' }}>
+                      {getFileIcon(file.name)}
+                      <span style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                        {file.name}
+                      </span>
+                    </div>
+
+                    {files.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          onDeleteFile(file.id);
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#686877',
+                          cursor: 'pointer',
+                          padding: 2,
+                          display: 'flex',
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
+                        onMouseLeave={e => (e.currentTarget.style.color = '#686877')}
+                        title={isRu ? 'Удалить файл' : 'Delete file'}
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    )}
                   </div>
-
-                  {files.length > 1 && (
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        onDeleteFile(file.id);
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text-dim)',
-                        cursor: 'pointer',
-                        padding: 2,
-                        opacity: 0.6,
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                      onMouseLeave={e => (e.currentTarget.style.opacity = '0.6')}
-                      title={isRu ? 'Удалить файл' : 'Delete file'}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Right Editor Area */}
-        <div
-          className="card"
-          style={{
-            flex: 1,
-            padding: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            backgroundColor: '#090812',
-            border: '1px solid rgba(139, 92, 246, 0.2)',
-            overflow: 'hidden',
-          }}
-        >
+        {/* Right Editor Group (Tabs + Code + Docked Terminal) */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
           {/* File Tabs Bar */}
           <div
             style={{
+              height: 35,
+              backgroundColor: '#111115',
+              borderBottom: '1px solid #25252D',
               display: 'flex',
-              backgroundColor: 'rgba(255, 255, 255, 0.02)',
-              borderBottom: '1px solid var(--border-subtle)',
               overflowX: 'auto',
+              flexShrink: 0,
+              userSelect: 'none',
             }}
           >
             {files.map(file => {
@@ -504,46 +758,107 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
                   key={file.id}
                   onClick={() => onSelectFile(file.id)}
                   style={{
-                    padding: '8px 14px',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 8,
-                    borderRight: '1px solid var(--border-subtle)',
-                    borderBottom: isActive ? '2px solid #8b5cf6' : '2px solid transparent',
-                    backgroundColor: isActive ? '#0e0c1b' : 'transparent',
-                    color: isActive ? '#fff' : 'var(--text-dim)',
+                    gap: 7,
+                    padding: '0 12px',
+                    fontSize: '0.78rem',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    color: isActive ? '#F1F1F5' : '#92929F',
+                    backgroundColor: isActive ? '#0B0B0E' : '#111115',
+                    borderTop: isActive ? '2px solid #8B6CFF' : '2px solid transparent',
+                    borderRight: '1px solid #25252D',
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   {getFileIcon(file.name)}
                   <span>{file.name}</span>
+                  {files.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        onDeleteFile(file.id);
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#686877',
+                        cursor: 'pointer',
+                        padding: 1,
+                        marginLeft: 4,
+                        display: 'flex',
+                        borderRadius: 3,
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
+                      onMouseLeave={e => (e.currentTarget.style.color = '#686877')}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          {/* Editor & Line Numbers */}
-          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          {/* Breadcrumb Path Bar */}
+          <div
+            style={{
+              height: 22,
+              backgroundColor: '#111115',
+              borderBottom: '1px solid #25252D',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0 12px',
+              fontSize: '0.7rem',
+              color: '#686877',
+              gap: 6,
+              flexShrink: 0,
+            }}
+          >
+            <span>{project.title}</span>
+            <span>&rsaquo;</span>
+            <span style={{ color: '#F1F1F5', fontWeight: 500 }}>{activeFile?.name || ''}</span>
+          </div>
+
+          {/* Central Editor Area (Line Numbers Gutter + Textarea) */}
+          <div
+            style={{
+              flex: isTerminalMaximized ? 0 : 1,
+              display: isTerminalMaximized ? 'none' : 'flex',
+              minHeight: 0,
+              backgroundColor: '#0B0B0E',
+              overflow: 'hidden',
+            }}
+          >
             {/* Line numbers gutter */}
             <div
               style={{
-                width: 48,
-                backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                borderRight: '1px solid rgba(255, 255, 255, 0.05)',
-                color: 'rgba(167, 139, 250, 0.4)',
-                fontFamily: 'var(--font-mono, monospace)',
+                width: 46,
+                backgroundColor: '#111115',
+                borderRight: '1px solid #25252D',
+                color: '#686877',
+                fontFamily: 'var(--font-mono, "JetBrains Mono", Consolas, monospace)',
                 fontSize: '0.82rem',
-                lineHeight: '1.5rem',
+                lineHeight: '1.55rem',
                 textAlign: 'right',
-                padding: '12px 8px 12px 0',
+                padding: '10px 8px 10px 0',
                 userSelect: 'none',
                 overflowY: 'hidden',
+                flexShrink: 0,
               }}
             >
               {lineNumbers.map(n => (
-                <div key={n}>{n}</div>
+                <div
+                  key={n}
+                  style={{
+                    color: n === cursorPos.line ? '#8B6CFF' : '#686877',
+                    fontWeight: n === cursorPos.line ? 700 : 400,
+                  }}
+                >
+                  {n}
+                </div>
               ))}
             </div>
 
@@ -555,52 +870,319 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
                 if (activeFile) {
                   onUpdateFileContent(activeFile.id, e.target.value);
                 }
+                updateCursorPosition(e.target);
               }}
+              onSelect={e => updateCursorPosition(e.currentTarget)}
+              onClick={e => updateCursorPosition(e.currentTarget)}
+              onKeyUp={e => updateCursorPosition(e.currentTarget)}
               onKeyDown={handleKeyDown}
               spellCheck={false}
               wrap="off"
               style={{
                 flex: 1,
-                backgroundColor: 'transparent',
+                backgroundColor: '#0B0B0E',
                 color: '#e2e8f0',
-                fontFamily: 'var(--font-mono, "JetBrains Mono", Consolas, monospace)',
+                fontFamily: 'var(--font-mono, "JetBrains Mono", "Fira Code", Consolas, monospace)',
                 fontSize: '0.84rem',
-                lineHeight: '1.5rem',
-                padding: '12px',
+                lineHeight: '1.55rem',
+                padding: '10px 14px',
                 border: 'none',
                 outline: 'none',
                 resize: 'none',
                 tabSize: 2,
                 overflow: 'auto',
+                caretColor: '#8B6CFF',
               }}
               placeholder={isRu ? '// Введите код здесь...' : '// Enter code here...'}
             />
           </div>
 
-          {/* Bottom Editor Status Bar */}
+          {/* 3. DOCKED INTEGRATED TERMINAL PANEL (VS CODE STYLE) */}
+          {isTerminalOpen && (
+            <div
+              style={{
+                height: isTerminalMaximized ? '100%' : 240,
+                backgroundColor: '#0B0B0E',
+                borderTop: '1px solid #25252D',
+                display: 'flex',
+                flexDirection: 'column',
+                flexShrink: 0,
+                overflow: 'hidden',
+              }}
+            >
+              {/* Panel Header */}
+              <div
+                style={{
+                  height: 32,
+                  backgroundColor: '#111115',
+                  borderBottom: '1px solid #25252D',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0 12px',
+                  userSelect: 'none',
+                  flexShrink: 0,
+                }}
+              >
+                {/* Tabs */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div
+                    style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      color: '#F1F1F5',
+                      borderBottom: '2px solid #8B6CFF',
+                      padding: '6px 0',
+                      letterSpacing: 0.5,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <span>TERMINAL</span>
+                    <span
+                      style={{
+                        fontSize: '0.66rem',
+                        padding: '1px 5px',
+                        borderRadius: 3,
+                        backgroundColor: '#16161C',
+                        color: '#8B6CFF',
+                        border: '1px solid #25252D',
+                      }}
+                    >
+                      1: pwsh
+                    </span>
+                  </div>
+
+                  <span style={{ fontSize: '0.72rem', color: '#686877', cursor: 'pointer' }}>OUTPUT</span>
+                  <span style={{ fontSize: '0.72rem', color: '#686877', cursor: 'pointer' }}>PROBLEMS (0)</span>
+                </div>
+
+                {/* Controls */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {/* Preset quick buttons */}
+                  <div style={{ display: 'flex', gap: 4, marginRight: 6 }}>
+                    {presets.map(p => (
+                      <button
+                        key={p}
+                        onClick={() => handleRunTerminalCommand(p)}
+                        disabled={isTerminalRunning}
+                        style={{
+                          background: '#16161C',
+                          border: '1px solid #25252D',
+                          borderRadius: 3,
+                          color: '#92929F',
+                          fontSize: '0.68rem',
+                          fontFamily: 'var(--font-mono)',
+                          padding: '1px 6px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setTerminalHistory([])}
+                    style={{ background: 'transparent', border: 'none', color: '#686877', cursor: 'pointer', padding: 3 }}
+                    title={isRu ? 'Очистить консоль' : 'Clear Terminal'}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsTerminalMaximized(!isTerminalMaximized)}
+                    style={{ background: 'transparent', border: 'none', color: '#686877', cursor: 'pointer', padding: 3 }}
+                    title={isTerminalMaximized ? (isRu ? 'Восстановить размер' : 'Restore Panel') : (isRu ? 'Развернуть панель' : 'Maximize Panel')}
+                  >
+                    {isTerminalMaximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsTerminalOpen(false)}
+                    style={{ background: 'transparent', border: 'none', color: '#686877', cursor: 'pointer', padding: 3 }}
+                    title={isRu ? 'Закрыть панель (Ctrl+`)' : 'Close Panel (Ctrl+`)'}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Terminal Logs & Output */}
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  padding: '8px 14px',
+                  fontFamily: 'var(--font-mono, "JetBrains Mono", Consolas, monospace)',
+                  fontSize: '0.78rem',
+                  lineHeight: 1.5,
+                  backgroundColor: '#0B0B0E',
+                }}
+              >
+                <div style={{ color: '#686877', marginBottom: 8 }}>
+                  Windows PowerShell [NEXUS Terminal Session: {projectDir}]
+                </div>
+
+                {terminalHistory.map(item => (
+                  <div key={item.id} style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#A78BFA' }}>
+                      <span style={{ color: '#38bdf8' }}>PS {projectDir}&gt;</span>
+                      <span style={{ color: '#F1F1F5', fontWeight: 600 }}>{item.command}</span>
+                      <span style={{ fontSize: '0.68rem', color: '#686877', marginLeft: 'auto' }}>
+                        {item.durationMs}ms &bull; exit: {item.exitCode}
+                      </span>
+                    </div>
+
+                    {item.stdout && (
+                      <pre
+                        style={{
+                          margin: '4px 0 0 0',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-all',
+                          color: '#e2e8f0',
+                        }}
+                      >
+                        {item.stdout}
+                      </pre>
+                    )}
+
+                    {item.stderr && (
+                      <pre
+                        style={{
+                          margin: '4px 0 0 0',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-all',
+                          color: '#ef4444',
+                        }}
+                      >
+                        {item.stderr}
+                      </pre>
+                    )}
+                  </div>
+                ))}
+
+                <div ref={terminalEndRef} />
+              </div>
+
+              {/* Terminal Input Bar */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '6px 12px',
+                  backgroundColor: '#111115',
+                  borderTop: '1px solid #25252D',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '0.78rem',
+                }}
+              >
+                <span style={{ color: '#38bdf8', marginRight: 6, whiteSpace: 'nowrap' }}>PS&gt;</span>
+                <input
+                  type="text"
+                  value={terminalInput}
+                  onChange={e => setTerminalInput(e.target.value)}
+                  onKeyDown={handleTerminalInputKeyDown}
+                  disabled={isTerminalRunning}
+                  placeholder={
+                    isTerminalRunning
+                      ? isRu
+                        ? 'Выполняется...'
+                        : 'Running...'
+                      : isRu
+                      ? 'Введите команду (Enter для запуска, Вверх/Вниз для истории)...'
+                      : 'Type command (Enter to run, Up/Down for history)...'
+                  }
+                  style={{
+                    flex: 1,
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    color: '#F1F1F5',
+                    fontFamily: 'inherit',
+                    fontSize: 'inherit',
+                  }}
+                />
+                {isTerminalRunning && (
+                  <RotateCw size={13} color="#8B6CFF" className="spinning" style={{ animation: 'spin 1s linear infinite' }} />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 4. VS CODE BOTTOM STATUS BAR */}
           <div
             style={{
-              padding: '6px 14px',
-              backgroundColor: 'rgba(0, 0, 0, 0.35)',
-              borderTop: '1px solid var(--border-subtle)',
+              height: 22,
+              backgroundColor: '#111115',
+              borderTop: '1px solid #25252D',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              fontSize: '0.74rem',
-              color: 'var(--text-dim)',
+              padding: '0 10px',
+              fontSize: '0.7rem',
+              color: '#92929F',
+              userSelect: 'none',
+              flexShrink: 0,
             }}
           >
-            <div style={{ display: 'flex', gap: 14 }}>
-              <span>{activeFile?.path || activeFile?.name}</span>
-              <span>{lineCount} {isRu ? 'строк' : 'lines'}</span>
-              <span>{activeFile?.content.length || 0} {isRu ? 'симв.' : 'chars'}</span>
+            {/* Left Status Bar Items */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}
+                onClick={onOpenGit}
+                title="Git Branch"
+              >
+                <GitBranch size={12} color="#8B6CFF" />
+                <span>{project.git_branch || 'main'}</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#686877' }}>
+                <span>0 &#x2297;</span>
+                <span>0 &#x26A0;</span>
+              </div>
+
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', color: isTerminalOpen ? '#8B6CFF' : '#92929F' }}
+                onClick={() => setIsTerminalOpen(!isTerminalOpen)}
+                title={isRu ? 'Переключить терминал (Ctrl+`)' : 'Toggle Terminal (Ctrl+`)'}
+              >
+                <TerminalIcon size={11} />
+                <span>pwsh</span>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <span style={{ color: '#8b5cf6', textTransform: 'uppercase', fontWeight: 600 }}>
+
+            {/* Right Status Bar Items */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span>
+                Ln {cursorPos.line}, Col {cursorPos.col}
+              </span>
+              <span>{lineCount} {isRu ? 'стр.' : 'lines'}</span>
+              <span>Spaces: 2</span>
+              <span>UTF-8</span>
+              <span style={{ color: '#8B6CFF', fontWeight: 600, textTransform: 'uppercase' }}>
                 {activeFile?.language || 'text'}
               </span>
-              <span>UTF-8</span>
-              <span style={{ color: '#10b981' }}>● {isRu ? 'Автосохранение' : 'Auto-sync'}</span>
+              <button
+                type="button"
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: isFullscreen ? '#8B6CFF' : '#92929F',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: 0,
+                }}
+                title={isRu ? 'На весь экран (F11)' : 'Toggle Fullscreen (F11)'}
+              >
+                {isFullscreen ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+              </button>
             </div>
           </div>
         </div>
@@ -609,34 +1191,47 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
       {/* New File Modal */}
       {isNewFileModalOpen && (
         <div className="modal-overlay" onClick={() => setNewFileModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
-            <div className="modal-header">
-              <span className="modal-title">{isRu ? 'Создать новый файл' : 'Create New File'}</span>
-              <button className="btn-icon" onClick={() => setNewFileModalOpen(false)}>
+          <div
+            className="modal-content"
+            onClick={e => e.stopPropagation()}
+            style={{ maxWidth: 400, backgroundColor: '#111115', border: '1px solid #25252D', borderRadius: 8, padding: 20 }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#F1F1F5' }}>
+                {isRu ? 'Создать новый файл' : 'Create New File'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setNewFileModalOpen(false)}
+                style={{ background: 'transparent', border: 'none', color: '#92929F', cursor: 'pointer', fontSize: 16 }}
+              >
                 &times;
               </button>
             </div>
+
             <form onSubmit={handleCreateFileSubmit}>
-              <div className="modal-body">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div className="form-group">
                   <label className="form-label">{isRu ? 'Имя файла' : 'File Name'}</label>
                   <input
                     type="text"
                     className="form-input"
                     autoFocus
-                    placeholder="component.js, style.css, index.html"
+                    placeholder="component.tsx, style.css, index.html"
                     value={newFileName}
                     onChange={e => setNewFileName(e.target.value)}
                   />
                 </div>
+
                 <div className="form-group">
                   <label className="form-label">{isRu ? 'Тип файла' : 'File Type'}</label>
                   <select
-                    className="form-select"
+                    className="form-input"
                     value={newFileLang}
                     onChange={e => setNewFileLang(e.target.value)}
                   >
                     <option value="javascript">JavaScript (.js)</option>
+                    <option value="typescript">TypeScript (.ts / .tsx)</option>
                     <option value="html">HTML (.html)</option>
                     <option value="css">CSS (.css)</option>
                     <option value="markdown">Markdown (.md)</option>
@@ -646,11 +1241,16 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
                   </select>
                 </div>
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setNewFileModalOpen(false)}>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setNewFileModalOpen(false)}
+                >
                   {isRu ? 'Отмена' : 'Cancel'}
                 </button>
-                <button type="submit" className="btn btn-primary">
+                <button type="submit" className="btn btn-primary btn-sm">
                   {isRu ? 'Создать' : 'Create'}
                 </button>
               </div>
