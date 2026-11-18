@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   FileCode,
   FilePlus,
@@ -12,6 +12,8 @@ import {
   Sparkles,
   Check,
   Folder,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import type { Project, CodeFile } from '../../types';
 import { useApp } from '../../context/AppContext';
@@ -118,6 +120,21 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
   const [newFileLang, setNewFileLang] = useState('javascript');
   const [isSavedRecently, setIsSavedRecently] = useState(false);
   const [showTemplatesDropdown, setShowTemplatesDropdown] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+      if (e.key === 'F11') {
+        e.preventDefault();
+        setIsFullscreen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isFullscreen]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeFile = files.find(f => f.id === activeFileId) || files[0];
@@ -204,9 +221,24 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
-        height: 'calc(100vh - 300px)',
-        minHeight: 520,
+        gap: 10,
+        transition: 'all 0.18s ease',
+        ...(isFullscreen
+          ? {
+              position: 'fixed',
+              top: 38,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 900,
+              backgroundColor: '#0B0B0E',
+              padding: 12,
+              height: 'calc(100vh - 38px)',
+            }
+          : {
+              height: 'calc(100vh - 280px)',
+              minHeight: 520,
+            }),
       }}
     >
       {/* Top Studio Action Bar */}
@@ -219,7 +251,8 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
           justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: 12,
-          backgroundColor: 'var(--bg-surface)',
+          backgroundColor: '#111115',
+          border: '1px solid #25252D',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -324,8 +357,31 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
             onClick={onOpenGit}
             style={{ fontSize: '0.8rem' }}
           >
-            <GitBranch size={14} color="#8b5cf6" />
+            <GitBranch size={14} color="#8B6CFF" />
             Git
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '5px 12px',
+              backgroundColor: isFullscreen ? 'rgba(139, 108, 255, 0.18)' : '#16161C',
+              border: `1px solid ${isFullscreen ? '#8B6CFF' : '#25252D'}`,
+              borderRadius: 5,
+              color: isFullscreen ? '#F1F1F5' : '#92929F',
+              fontSize: '0.78rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+            title={isFullscreen ? (isRu ? 'Выйти из полноэкранного режима (Esc / F11)' : 'Exit Fullscreen (Esc / F11)') : (isRu ? 'Открыть на весь экран (F11)' : 'Fullscreen (F11)')}
+          >
+            {isFullscreen ? <Minimize2 size={13} color="#8B6CFF" /> : <Maximize2 size={13} />}
+            <span>{isFullscreen ? (isRu ? 'Свернуть' : 'Exit') : (isRu ? 'Фулл экран' : 'Fullscreen')}</span>
           </button>
         </div>
       </div>
