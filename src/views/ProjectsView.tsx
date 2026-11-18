@@ -18,6 +18,9 @@ import {
   Activity,
   BookOpen,
   Sparkles,
+  FolderPlus,
+  FolderOpen,
+  ExternalLink,
 } from 'lucide-react';
 import { GithubIcon } from '../components/GithubIcon';
 import { useApp } from '../context/AppContext';
@@ -73,6 +76,7 @@ export const ProjectsView: React.FC = () => {
     status: 'In Progress',
     progress: 0,
     deadline: '',
+    repo_path: '',
   });
 
   const [isTaskModalOpen, setTaskModalOpen] = useState(false);
@@ -113,6 +117,18 @@ export const ProjectsView: React.FC = () => {
         parsedFiles = JSON.parse(p.code_files);
       }
     } catch {}
+
+    // If project is linked to a local folder, try to load fresh files from disk
+    if (p.repo_path) {
+      try {
+        const diskFiles = await api.loadFolderFiles(p.repo_path);
+        if (diskFiles && diskFiles.length > 0) {
+          parsedFiles = diskFiles;
+        }
+      } catch (err) {
+        console.warn('Could not read files from repo_path:', err);
+      }
+    }
 
     if (!parsedFiles || parsedFiles.length === 0) {
       parsedFiles = [
@@ -161,6 +177,60 @@ export const ProjectsView: React.FC = () => {
     }
   };
 
+  const handleOpenFolderProject = async () => {
+    try {
+      const selectedPath = await api.pickFolderDialog();
+      if (!selectedPath) return;
+
+      const cleanPath = selectedPath.trim();
+      const folderName = cleanPath.split(/[\\/]/).filter(Boolean).pop() || 'Project';
+
+      // Load files from disk
+      const diskFiles = await api.loadFolderFiles(cleanPath);
+
+      // Check if project with this repo_path already exists
+      const existing = projects.find(
+        p => p.repo_path && p.repo_path.toLowerCase() === cleanPath.toLowerCase()
+      );
+
+      if (existing) {
+        const updatedFiles = diskFiles.length > 0 ? diskFiles : [];
+        setCodeFiles(updatedFiles);
+        setActiveCodeFileId(updatedFiles[0]?.id || '');
+        selectProject(existing);
+        setActiveTab('code');
+        addToast(
+          isRu ? 'Папка проекта открыта' : 'Folder Opened',
+          `${existing.title} (${diskFiles.length} ${isRu ? 'файлов' : 'files'})`,
+          'success'
+        );
+      } else {
+        const newProj = await api.createProject({
+          title: folderName,
+          description: isRu ? `Локальная папка: ${cleanPath}` : `Local folder: ${cleanPath}`,
+          repo_path: cleanPath,
+          status: 'In Progress',
+          progress: 0,
+          cover_color: '#8B6CFF',
+          code_files: JSON.stringify(diskFiles),
+        });
+
+        setProjects(prev => [newProj, ...prev]);
+        selectProject(newProj);
+        setCodeFiles(diskFiles);
+        setActiveCodeFileId(diskFiles[0]?.id || '');
+        setActiveTab('code');
+        addToast(
+          isRu ? 'Папка добавлена в проекты' : 'Folder added to projects',
+          `${folderName} (${diskFiles.length} ${isRu ? 'файлов считано' : 'files loaded'})`,
+          'success'
+        );
+      }
+    } catch (err: any) {
+      addToast(isRu ? 'Ошибка открытия папки' : 'Error opening folder', String(err), 'error');
+    }
+  };
+
   const handleCreateProject = () => {
     setEditingProject(null);
     setProjectForm({
@@ -170,6 +240,7 @@ export const ProjectsView: React.FC = () => {
       status: 'In Progress',
       progress: 0,
       deadline: '',
+      repo_path: '',
     });
     setProjectModalOpen(true);
   };
@@ -183,6 +254,7 @@ export const ProjectsView: React.FC = () => {
       status: p.status,
       progress: p.progress,
       deadline: p.deadline || '',
+      repo_path: p.repo_path || '',
     });
     setProjectModalOpen(true);
   };
@@ -192,14 +264,32 @@ export const ProjectsView: React.FC = () => {
     if (!projectForm.title.trim()) return;
 
     try {
+      let codeFilesJson = undefined;
+      if (projectForm.repo_path) {
+        try {
+          const diskFiles = await api.loadFolderFiles(projectForm.repo_path);
+          if (diskFiles && diskFiles.length > 0) {
+            codeFilesJson = JSON.stringify(diskFiles);
+            setCodeFiles(diskFiles);
+            setActiveCodeFileId(diskFiles[0]?.id || '');
+          }
+        } catch {}
+      }
+
+      const payload = {
+        ...projectForm,
+        ...(codeFilesJson ? { code_files: codeFilesJson } : {}),
+      };
+
       if (editingProject) {
-        await api.updateProject(editingProject.id, projectForm);
-        const updated: Project = { ...editingProject, ...projectForm };
+        await api.updateProject(editingProject.id, payload);
+        const updated: Project = { ...editingProject, ...payload };
         setProjects(prev => prev.map(p => (p.id === updated.id ? updated : p)));
         setActiveProject(updated);
+        selectProject(updated);
         addToast(isRu ? 'Проект обновлен' : 'Project updated', updated.title, 'success');
       } else {
-        const created = await api.createProject(projectForm);
+        const created = await api.createProject(payload);
         setProjects(prev => [created, ...prev]);
         selectProject(created);
         addToast(isRu ? 'Проект создан' : 'Project created', created.title, 'success');
@@ -311,12 +401,29 @@ export const ProjectsView: React.FC = () => {
     if (!activeProject) return;
     setCodeFiles(updatedFiles);
     try {
+      // Save files to disk if repo_path is linked
+      if (activeProject.repo_path) {
+        for (const file of updatedFiles) {
+          const diskPath = file.full_path || (activeProject.repo_path.replace(/[\\/]+$/, '') + '\\' + file.path.replace(/\//g, '\\'));
+          try {
+            await api.saveFileToDisk(diskPath, file.content);
+          } catch (e) {
+            console.warn('Disk save error for', file.name, e);
+          }
+        }
+      }
       const jsonStr = JSON.stringify(updatedFiles);
       await api.updateProject(activeProject.id, {
         code_files: jsonStr,
       });
       setActiveProject(prev => (prev ? { ...prev, code_files: jsonStr } : null));
-      addToast(isRu ? 'Код сохранен' : 'Code saved', `${updatedFiles.length} файлов`, 'success');
+      addToast(
+        isRu ? 'Код сохранен' : 'Code saved',
+        activeProject.repo_path
+          ? (isRu ? 'Записано на диск и в проект' : 'Saved to disk and project')
+          : `${updatedFiles.length} ${isRu ? 'файлов' : 'files'}`,
+        'success'
+      );
     } catch (err: any) {
       addToast(isRu ? 'Ошибка сохранения' : 'Save Error', String(err), 'error');
     }
@@ -427,6 +534,16 @@ export const ProjectsView: React.FC = () => {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
+            onClick={handleOpenFolderProject}
+            className="btn btn-secondary btn-sm"
+            style={{ fontSize: '0.78rem', gap: 6, borderColor: 'rgba(139, 92, 246, 0.3)' }}
+            title={isRu ? 'Открыть готовую папку с кодом на диске' : 'Open project folder from disk'}
+          >
+            <FolderOpen size={14} color="#8B6CFF" />
+            <span>{isRu ? 'Открыть папку' : 'Open Folder'}</span>
+          </button>
+
+          <button
             onClick={() => setGitHubModalOpen(true)}
             className="btn btn-secondary btn-sm"
             style={{ fontSize: '0.78rem', gap: 6, borderColor: 'rgba(139, 92, 246, 0.3)' }}
@@ -467,17 +584,21 @@ export const ProjectsView: React.FC = () => {
           </h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.86rem', maxWidth: 450 }}>
             {isRu
-              ? 'Создайте локальный проект или загрузите репозиторий с вашего GitHub аккаунта.'
-              : 'Create a new local project or import a repository from your GitHub account.'}
+              ? 'Откройте готовую папку с кодом с вашего компьютера, создайте новый проект или загрузите с GitHub.'
+              : 'Open an existing code folder from your computer, create a new project, or import from GitHub.'}
           </p>
-          <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+          <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button onClick={handleOpenFolderProject} className="btn btn-primary">
+              <FolderOpen size={16} />
+              <span>{isRu ? 'Открыть готовую папку' : 'Open Folder'}</span>
+            </button>
+            <button onClick={handleCreateProject} className="btn btn-secondary">
+              <Plus size={16} />
+              <span>{isRu ? 'Создать проект' : 'Create Project'}</span>
+            </button>
             <button onClick={() => setGitHubModalOpen(true)} className="btn btn-secondary">
               <GithubIcon size={16} color="#c084fc" />
               <span>{isRu ? 'Загрузить с GitHub' : 'Import from GitHub'}</span>
-            </button>
-            <button onClick={handleCreateProject} className="btn btn-primary">
-              <Plus size={16} />
-              <span>{isRu ? 'Создать проект' : 'Create Project'}</span>
             </button>
           </div>
         </div>
@@ -531,6 +652,64 @@ export const ProjectsView: React.FC = () => {
                     <div style={{ width: `${activeProject.progress}%`, height: '100%', backgroundColor: '#8B6CFF' }} />
                   </div>
                 </div>
+
+                {activeProject.repo_path ? (
+                  <button
+                    onClick={() => api.openFolderInExplorer(activeProject.repo_path!)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      padding: '6px 12px',
+                      backgroundColor: '#16161C',
+                      border: '1px solid #25252D',
+                      borderRadius: 5,
+                      color: '#A78BFA',
+                      fontSize: '0.74rem',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                    }}
+                    title={isRu ? 'Открыть папку в Проводнике Windows' : 'Reveal in Windows Explorer'}
+                  >
+                    <FolderOpen size={13} color="#8B6CFF" />
+                    <span>{isRu ? 'В Проводнике' : 'In Explorer'}</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      const picked = await api.pickFolderDialog();
+                      if (picked) {
+                        const diskFiles = await api.loadFolderFiles(picked);
+                        await api.updateProject(activeProject.id, {
+                          repo_path: picked,
+                          code_files: JSON.stringify(diskFiles),
+                        });
+                        const up = { ...activeProject, repo_path: picked, code_files: JSON.stringify(diskFiles) };
+                        setActiveProject(up);
+                        setProjects(prev => prev.map(p => (p.id === up.id ? up : p)));
+                        setCodeFiles(diskFiles);
+                        addToast(isRu ? 'Папка привязана' : 'Folder linked', picked, 'success');
+                      }
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      padding: '6px 12px',
+                      backgroundColor: '#16161C',
+                      border: '1px solid #25252D',
+                      borderRadius: 5,
+                      color: '#F1F1F5',
+                      fontSize: '0.74rem',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                    }}
+                    title={isRu ? 'Привязать готовую локальную папку' : 'Link local folder'}
+                  >
+                    <FolderPlus size={13} color="#8B6CFF" />
+                    <span>{isRu ? 'Привязать папку' : 'Link Folder'}</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => setTemplateModalOpen(true)}
@@ -815,11 +994,21 @@ export const ProjectsView: React.FC = () => {
               onUpdateFileContent={(id, content) => {
                 setCodeFiles(prev => prev.map(f => (f.id === id ? { ...f, content } : f)));
               }}
-              onCreateFile={(name, language, content) => {
+              onCreateFile={async (name, language, content) => {
+                let fullPath = undefined;
+                if (activeProject.repo_path) {
+                  try {
+                    const df = await api.createFileOnDisk(activeProject.repo_path, name, content || '');
+                    fullPath = df.full_path;
+                  } catch (e) {
+                    console.warn('Failed creating file on disk:', e);
+                  }
+                }
                 const newF: CodeFile = {
                   id: 'f-' + Date.now(),
                   name,
                   path: name,
+                  full_path: fullPath,
                   language,
                   content: content || '',
                 };
@@ -828,7 +1017,16 @@ export const ProjectsView: React.FC = () => {
                 setActiveCodeFileId(newF.id);
                 handleSaveCodeFiles(updated);
               }}
-              onDeleteFile={id => {
+              onDeleteFile={async id => {
+                const target = codeFiles.find(f => f.id === id);
+                if (target && activeProject.repo_path) {
+                  const diskPath = target.full_path || (activeProject.repo_path.replace(/[\\/]+$/, '') + '\\' + target.path.replace(/\//g, '\\'));
+                  try {
+                    await api.deleteFileFromDisk(diskPath);
+                  } catch (e) {
+                    console.warn('Failed deleting file from disk:', e);
+                  }
+                }
                 const rem = codeFiles.filter(f => f.id !== id);
                 setCodeFiles(rem);
                 if (activeCodeFileId === id) setActiveCodeFileId(rem[0]?.id || '');
@@ -839,6 +1037,26 @@ export const ProjectsView: React.FC = () => {
               }}
               onOpenPreview={() => setActiveTab('preview')}
               onOpenGit={() => setActiveTab('git')}
+              onReloadDiskFiles={async () => {
+                if (!activeProject.repo_path) return;
+                try {
+                  const diskFiles = await api.loadFolderFiles(activeProject.repo_path);
+                  if (diskFiles && diskFiles.length > 0) {
+                    setCodeFiles(diskFiles);
+                    if (!diskFiles.some(f => f.id === activeCodeFileId)) {
+                      setActiveCodeFileId(diskFiles[0]?.id || '');
+                    }
+                    addToast(
+                      isRu ? 'Файлы обновлены с диска' : 'Files reloaded',
+                      `${diskFiles.length} ${isRu ? 'файлов считано' : 'files loaded'}`,
+                      'success'
+                    );
+                  }
+                } catch (e: any) {
+                  addToast(isRu ? 'Ошибка чтения' : 'Load Error', String(e), 'error');
+                }
+              }}
+              onOpenFolder={handleOpenFolderProject}
             />
           )}
 
@@ -963,6 +1181,57 @@ export const ProjectsView: React.FC = () => {
                     />
                   </div>
 
+                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+                    <label className="form-label" style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#92929F', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>
+                      {isRu ? 'Локальная папка проекта (на диске)' : 'Local Project Folder'}
+                    </label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        style={{ flex: 1, backgroundColor: '#16161C', border: '1px solid #25252D', color: '#F1F1F5', padding: '9px 12px', borderRadius: 6 }}
+                        value={activeProject.repo_path || (isRu ? 'Папка не привязана' : 'No folder linked')}
+                        readOnly
+                      />
+                      {activeProject.repo_path && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => api.openFolderInExplorer(activeProject.repo_path!)}
+                          style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}
+                          title={isRu ? 'Открыть в Проводнике Windows' : 'Reveal in Explorer'}
+                        >
+                          <ExternalLink size={13} color="#8B6CFF" />
+                          <span>{isRu ? 'Проводник' : 'Explorer'}</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={async () => {
+                          const picked = await api.pickFolderDialog();
+                          if (picked) {
+                            const diskFiles = await api.loadFolderFiles(picked);
+                            await api.updateProject(activeProject.id, {
+                              repo_path: picked,
+                              code_files: JSON.stringify(diskFiles),
+                            });
+                            const up = { ...activeProject, repo_path: picked, code_files: JSON.stringify(diskFiles) };
+                            setActiveProject(up);
+                            setProjects(prev => prev.map(p => (p.id === up.id ? up : p)));
+                            setCodeFiles(diskFiles);
+                            addToast(isRu ? 'Папка привязана' : 'Folder linked', picked, 'success');
+                          }
+                        }}
+                        style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}
+                        title={isRu ? 'Выбрать другую локальную папку' : 'Choose another folder'}
+                      >
+                        <FolderOpen size={13} color="#8B6CFF" />
+                        <span>{isRu ? 'Выбрать...' : 'Browse...'}</span>
+                      </button>
+                    </div>
+                  </div>
+
                   {activeProject.git_remote && (
                     <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
                       <label className="form-label" style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#92929F', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 }}>
@@ -1067,6 +1336,36 @@ export const ProjectsView: React.FC = () => {
                   value={projectForm.title}
                   onChange={e => setProjectForm({ ...projectForm, title: e.target.value })}
                 />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">{isRu ? 'Локальная папка проекта (на диске)' : 'Local Project Folder'}</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="C:\Projects\my-app"
+                    value={projectForm.repo_path || ''}
+                    onChange={e => setProjectForm({ ...projectForm, repo_path: e.target.value })}
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={async () => {
+                      const picked = await api.pickFolderDialog();
+                      if (picked) {
+                        const autoTitle = projectForm.title || picked.split(/[\\/]/).filter(Boolean).pop() || '';
+                        setProjectForm({ ...projectForm, repo_path: picked, title: autoTitle });
+                      }
+                    }}
+                    style={{ whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}
+                    title={isRu ? 'Выбрать папку на диске' : 'Browse folder'}
+                  >
+                    <FolderOpen size={13} color="#8B6CFF" />
+                    <span>{isRu ? 'Обзор...' : 'Browse...'}</span>
+                  </button>
+                </div>
               </div>
 
               <div className="form-group">

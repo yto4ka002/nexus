@@ -69,6 +69,7 @@ export interface CodeFile {
   id: string;
   name: string;
   path: string;
+  full_path?: string;
   language: string;
   content: string;
 }

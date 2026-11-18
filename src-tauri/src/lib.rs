@@ -265,7 +265,13 @@ pub fn run() {
             get_activities_cmd,
             ai_chat_cmd,
             github_get_pull_requests_cmd,
-            github_get_issues_cmd
+            github_get_issues_cmd,
+            pick_folder_dialog_cmd,
+            load_folder_files_cmd,
+            save_file_to_disk_cmd,
+            create_file_on_disk_cmd,
+            delete_file_from_disk_cmd,
+            open_folder_in_explorer_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

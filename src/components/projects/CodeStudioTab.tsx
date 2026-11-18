@@ -12,6 +12,8 @@ import {
   Sparkles,
   Check,
   Folder,
+  FolderOpen,
+  ExternalLink,
   Maximize2,
   Minimize2,
   X,
@@ -35,6 +37,8 @@ interface CodeStudioTabProps {
   onSaveAll: () => Promise<void>;
   onOpenPreview: () => void;
   onOpenGit: () => void;
+  onReloadDiskFiles?: () => Promise<void>;
+  onOpenFolder?: () => Promise<void>;
 }
 
 const TEMPLATES = [
@@ -127,6 +131,8 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
   onSaveAll,
   onOpenPreview,
   onOpenGit,
+  onReloadDiskFiles,
+  onOpenFolder,
 }) => {
   const { language, addToast } = useApp();
   const isRu = language === 'ru';
@@ -235,9 +241,23 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
   };
 
   const triggerSave = async () => {
+    if (project.repo_path && activeFile) {
+      const diskPath = activeFile.full_path || (project.repo_path.replace(/[\\/]+$/, '') + '\\' + activeFile.path.replace(/\//g, '\\'));
+      try {
+        await api.saveFileToDisk(diskPath, activeFile.content);
+      } catch (err) {
+        console.warn('Failed saving file to disk:', err);
+      }
+    }
     await onSaveAll();
     setIsSavedRecently(true);
-    addToast(isRu ? 'Файлы сохранены' : 'Files Saved', isRu ? 'Все изменения записаны' : 'All changes saved', 'success');
+    addToast(
+      isRu ? 'Файлы сохранены' : 'Files Saved',
+      project.repo_path
+        ? (isRu ? 'Записано на диск и в проект' : 'Saved to disk and project')
+        : (isRu ? 'Все изменения записаны' : 'All changes saved'),
+      'success'
+    );
     setTimeout(() => setIsSavedRecently(false), 2000);
   };
 
@@ -483,6 +503,31 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
             )}
           </div>
 
+          {/* Open Folder */}
+          {onOpenFolder && (
+            <button
+              type="button"
+              onClick={onOpenFolder}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '4px 9px',
+                backgroundColor: '#16161C',
+                border: '1px solid #25252D',
+                borderRadius: 4,
+                color: '#A78BFA',
+                fontSize: '0.74rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+              title={isRu ? 'Открыть готовую папку с кодом (локальный каталог)' : 'Open local project folder'}
+            >
+              <FolderOpen size={12} color="#8B6CFF" />
+              <span>{isRu ? 'Папка' : 'Folder'}</span>
+            </button>
+          )}
+
           {/* Live Preview */}
           <button
             type="button"
@@ -679,7 +724,41 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
               }}
             >
               <span>{isRu ? 'Файлы' : 'Explorer'}</span>
-              <div style={{ display: 'flex', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                {project.repo_path && onReloadDiskFiles && (
+                  <button
+                    type="button"
+                    onClick={onReloadDiskFiles}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#92929F',
+                      cursor: 'pointer',
+                      padding: 2,
+                      display: 'flex',
+                    }}
+                    title={isRu ? 'Обновить файлы с диска' : 'Reload from disk'}
+                  >
+                    <RotateCw size={11} />
+                  </button>
+                )}
+                {onOpenFolder && (
+                  <button
+                    type="button"
+                    onClick={onOpenFolder}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#92929F',
+                      cursor: 'pointer',
+                      padding: 2,
+                      display: 'flex',
+                    }}
+                    title={isRu ? 'Открыть готовую папку...' : 'Open folder...'}
+                  >
+                    <FolderOpen size={12} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setNewFileModalOpen(true)}
@@ -693,7 +772,7 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
                   }}
                   title={isRu ? 'Новый файл' : 'New File'}
                 >
-                  <FilePlus size={13} />
+                  <FilePlus size={12} />
                 </button>
               </div>
             </div>
@@ -703,7 +782,7 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 4,
+                justifyContent: 'space-between',
                 padding: '4px 8px',
                 fontSize: '0.68rem',
                 fontWeight: 700,
@@ -712,11 +791,58 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
                 borderBottom: '1px solid #25252D',
               }}
             >
-              <ChevronRight size={11} />
-              <span style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                {project.title.toUpperCase()}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
+                <ChevronRight size={11} />
+                <span style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                  {project.title.toUpperCase()}
+                </span>
+              </div>
+              {project.repo_path && (
+                <button
+                  type="button"
+                  onClick={() => api.openFolderInExplorer(project.repo_path!)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#686877',
+                    cursor: 'pointer',
+                    padding: 1,
+                    display: 'flex',
+                  }}
+                  title={isRu ? 'Показать в Проводнике Windows' : 'Reveal in Explorer'}
+                >
+                  <ExternalLink size={10} />
+                </button>
+              )}
             </div>
+
+            {/* If no folder linked, button to connect */}
+            {!project.repo_path && onOpenFolder && (
+              <div style={{ padding: '6px 8px', borderBottom: '1px solid #25252D' }}>
+                <button
+                  type="button"
+                  onClick={onOpenFolder}
+                  style={{
+                    width: '100%',
+                    padding: '4px 6px',
+                    backgroundColor: 'rgba(139, 108, 255, 0.1)',
+                    border: '1px solid rgba(139, 108, 255, 0.35)',
+                    borderRadius: 4,
+                    color: '#A78BFA',
+                    fontSize: '0.68rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 5,
+                  }}
+                >
+                  <FolderOpen size={11} />
+                  <span>{isRu ? 'Открыть папку' : 'Open Folder'}</span>
+                </button>
+              </div>
+            )}
 
             {/* File List Tree */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '3px 0' }}>

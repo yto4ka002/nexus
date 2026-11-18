@@ -2718,3 +2718,237 @@ pub async fn github_get_issues_cmd(
     Ok(issues)
 }
 
+// -------------------------------------------------------------
+// REAL LOCAL FOLDER & WORKSPACE SYSTEM
+// -------------------------------------------------------------
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct DiskCodeFile {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub full_path: String,
+    pub language: String,
+    pub content: String,
+}
+
+fn detect_code_language(ext: &str) -> String {
+    match ext.to_lowercase().as_str() {
+        "html" | "htm" => "html".to_string(),
+        "css" | "scss" | "sass" | "less" => "css".to_string(),
+        "js" | "jsx" | "mjs" | "cjs" => "javascript".to_string(),
+        "ts" | "tsx" | "mts" | "cts" => "typescript".to_string(),
+        "json" | "jsonc" => "json".to_string(),
+        "md" | "markdown" => "markdown".to_string(),
+        "rs" => "rust".to_string(),
+        "py" | "pyw" => "python".to_string(),
+        "toml" => "toml".to_string(),
+        "yaml" | "yml" => "yaml".to_string(),
+        "sql" => "sql".to_string(),
+        "sh" | "bash" | "zsh" => "shell".to_string(),
+        "bat" | "cmd" | "ps1" | "psm1" => "powershell".to_string(),
+        "c" | "h" => "c".to_string(),
+        "cpp" | "hpp" | "cc" | "cxx" => "cpp".to_string(),
+        "cs" => "csharp".to_string(),
+        "go" => "go".to_string(),
+        "java" => "java".to_string(),
+        "kt" | "kts" => "kotlin".to_string(),
+        "php" => "php".to_string(),
+        "rb" => "ruby".to_string(),
+        "xml" | "svg" => "xml".to_string(),
+        "txt" | "log" | "env" | "gitignore" => "text".to_string(),
+        _ => "text".to_string(),
+    }
+}
+
+fn scan_folder_recursive(
+    root: &Path,
+    current: &Path,
+    results: &mut Vec<DiskCodeFile>,
+    max_files: usize,
+) {
+    if results.len() >= max_files {
+        return;
+    }
+
+    let entries = match fs::read_dir(current) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        if results.len() >= max_files {
+            break;
+        }
+
+        let path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().to_string();
+
+        if file_name.starts_with('.') && file_name != ".gitignore" && file_name != ".env" {
+            continue;
+        }
+
+        if path.is_dir() {
+            let lower = file_name.to_lowercase();
+            if lower == "node_modules"
+                || lower == "target"
+                || lower == "dist"
+                || lower == "build"
+                || lower == ".git"
+                || lower == ".vscode"
+                || lower == ".idea"
+                || lower == "venv"
+                || lower == ".venv"
+                || lower == "__pycache__"
+                || lower == "bin"
+                || lower == "obj"
+            {
+                continue;
+            }
+            scan_folder_recursive(root, &path, results, max_files);
+        } else if path.is_file() {
+            if let Ok(meta) = entry.metadata() {
+                if meta.len() > 2 * 1024 * 1024 {
+                    continue;
+                }
+            }
+
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let lower_ext = ext.to_lowercase();
+            let is_binary_ext = matches!(
+                lower_ext.as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "ico" | "exe" | "dll" | "so"
+                    | "dylib" | "zip" | "tar" | "gz" | "7z" | "rar" | "pdf" | "mp4"
+                    | "mp3" | "wav" | "ogg" | "ttf" | "woff" | "woff2" | "eot" | "bin"
+                    | "sqlite" | "db"
+            );
+            if is_binary_ext {
+                continue;
+            }
+
+            if let Ok(content) = fs::read_to_string(&path) {
+                let rel_path = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                let language = detect_code_language(ext);
+                let id = format!("disk-{}", results.len() + 1);
+
+                results.push(DiskCodeFile {
+                    id,
+                    name: file_name,
+                    path: rel_path,
+                    full_path: path.to_string_lossy().to_string(),
+                    language,
+                    content,
+                });
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub fn pick_folder_dialog_cmd() -> Result<Option<String>, String> {
+    let script = r#"
+        Add-Type -AssemblyName System.Windows.Forms
+        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dialog.Description = "Select a Project Folder"
+        $dialog.ShowNewFolderButton = $true
+        $win = New-Object System.Windows.Forms.NativeWindow
+        $win.AssignHandle([System.Diagnostics.Process]::GetCurrentProcess().MainWindowHandle)
+        $res = $dialog.ShowDialog($win)
+        if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
+            Write-Output $dialog.SelectedPath
+        }
+    "#;
+    let output = std::process::Command::new("powershell")
+        .args(&["-NoProfile", "-Command", script])
+        .output()
+        .map_err(|e| format!("Failed to open folder picker: {}", e))?;
+
+    let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path_str.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(path_str))
+    }
+}
+
+#[tauri::command]
+pub fn load_folder_files_cmd(folder_path: String) -> Result<Vec<DiskCodeFile>, String> {
+    let path = Path::new(&folder_path);
+    if !path.exists() || !path.is_dir() {
+        return Err(format!("Directory does not exist or is not a folder: {}", folder_path));
+    }
+
+    let mut results = Vec::new();
+    scan_folder_recursive(path, path, &mut results, 1000);
+    results.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(results)
+}
+
+#[tauri::command]
+pub fn save_file_to_disk_cmd(file_path: String, content: String) -> Result<(), String> {
+    let path = Path::new(&file_path);
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    fs::write(path, content).map_err(|e| format!("Failed to write file {}: {}", file_path, e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn create_file_on_disk_cmd(
+    folder_path: String,
+    rel_path: String,
+    content: Option<String>,
+) -> Result<DiskCodeFile, String> {
+    let root = Path::new(&folder_path);
+    let full_path = root.join(&rel_path);
+    if let Some(parent) = full_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let body = content.unwrap_or_default();
+    fs::write(&full_path, &body).map_err(|e| format!("Failed to create file: {}", e))?;
+
+    let file_name = full_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file")
+        .to_string();
+    let ext = full_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let language = detect_code_language(ext);
+
+    Ok(DiskCodeFile {
+        id: format!("disk-{}", chrono::Utc::now().timestamp_millis()),
+        name: file_name,
+        path: rel_path.replace('\\', "/"),
+        full_path: full_path.to_string_lossy().to_string(),
+        language,
+        content: body,
+    })
+}
+
+#[tauri::command]
+pub fn delete_file_from_disk_cmd(file_path: String) -> Result<(), String> {
+    let path = Path::new(&file_path);
+    if path.is_file() {
+        fs::remove_file(path).map_err(|e| format!("Failed to delete file: {}", e))?;
+    } else if path.is_dir() {
+        fs::remove_dir_all(path).map_err(|e| format!("Failed to delete folder: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_folder_in_explorer_cmd(folder_path: String) -> Result<(), String> {
+    let path = Path::new(&folder_path);
+    if path.exists() {
+        let _ = std::process::Command::new("explorer").arg(&folder_path).spawn();
+        Ok(())
+    } else {
+        Err(format!("Folder does not exist: {}", folder_path))
+    }
+}
+

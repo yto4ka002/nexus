@@ -12,6 +12,7 @@ import type {
   AppNotification,
   WeatherData,
   PingResult,
+  CodeFile,
 } from './types';
 
 export const isTauri = () => {
@@ -91,6 +92,52 @@ export async function createProjectFile(filePath: string, isDir: boolean): Promi
 export async function deleteProjectFile(filePath: string): Promise<void> {
   if (!isTauri()) return;
   return invoke<void>('delete_project_file_cmd', { filePath });
+}
+
+export async function pickFolderDialog(): Promise<string | null> {
+  if (!isTauri()) {
+    return window.prompt('Enter absolute local folder path (e.g. C:\\Projects\\my-app):');
+  }
+  return invoke<string | null>('pick_folder_dialog_cmd');
+}
+
+export async function loadFolderFiles(folderPath: string): Promise<CodeFile[]> {
+  if (!isTauri()) {
+    return [];
+  }
+  return invoke<CodeFile[]>('load_folder_files_cmd', { folderPath });
+}
+
+export async function saveFileToDisk(filePath: string, content: string): Promise<void> {
+  if (!isTauri()) return;
+  return invoke<void>('save_file_to_disk_cmd', { filePath, content });
+}
+
+export async function createFileOnDisk(
+  folderPath: string,
+  relPath: string,
+  content?: string
+): Promise<CodeFile> {
+  if (!isTauri()) {
+    return {
+      id: 'f-' + Date.now(),
+      name: relPath.split('/').pop() || relPath,
+      path: relPath,
+      language: 'text',
+      content: content || '',
+    };
+  }
+  return invoke<CodeFile>('create_file_on_disk_cmd', { folderPath, relPath, content });
+}
+
+export async function deleteFileFromDisk(filePath: string): Promise<void> {
+  if (!isTauri()) return;
+  return invoke<void>('delete_file_from_disk_cmd', { filePath });
+}
+
+export async function openFolderInExplorer(folderPath: string): Promise<void> {
+  if (!isTauri()) return;
+  return invoke<void>('open_folder_in_explorer_cmd', { folderPath });
 }
 
 export async function gitStatus(repoPath?: string, projectId?: number): Promise<any> {
