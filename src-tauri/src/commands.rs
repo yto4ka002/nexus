@@ -2848,30 +2848,46 @@ fn scan_folder_recursive(
     }
 }
 
+#[cfg(target_os = "windows")]
+extern "C" {
+    fn pick_folder_native() -> *mut u16;
+    fn free_folder_path(ptr: *mut u16);
+}
+
 #[tauri::command]
 pub fn pick_folder_dialog_cmd() -> Result<Option<String>, String> {
-    let script = r#"
-        Add-Type -AssemblyName System.Windows.Forms
-        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-        $dialog.Description = "Select a Project Folder"
-        $dialog.ShowNewFolderButton = $true
-        $win = New-Object System.Windows.Forms.NativeWindow
-        $win.AssignHandle([System.Diagnostics.Process]::GetCurrentProcess().MainWindowHandle)
-        $res = $dialog.ShowDialog($win)
-        if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
-            Write-Output $dialog.SelectedPath
-        }
-    "#;
-    let output = std::process::Command::new("powershell")
-        .args(&["-NoProfile", "-Command", script])
-        .output()
-        .map_err(|e| format!("Failed to open folder picker: {}", e))?;
+    #[cfg(target_os = "windows")]
+    {
+        let handle = std::thread::spawn(|| {
+            let ptr = unsafe { pick_folder_native() };
+            if ptr.is_null() {
+                return None;
+            }
+            let mut len = 0;
+            unsafe {
+                while *ptr.add(len) != 0 {
+                    len += 1;
+                }
+            }
+            let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
+            let path = String::from_utf16_lossy(slice);
+            unsafe { free_folder_path(ptr) };
+            let trimmed = path.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        });
 
-    let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if path_str.is_empty() {
+        handle
+            .join()
+            .map_err(|_| "Failed to wait for folder picker thread".to_string())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
         Ok(None)
-    } else {
-        Ok(Some(path_str))
     }
 }
 
