@@ -21,6 +21,7 @@ import {
   Sidebar,
   RotateCw,
   ChevronRight,
+  Search,
 } from 'lucide-react';
 import type { Project, CodeFile } from '../../types';
 import { useApp } from '../../context/AppContext';
@@ -147,6 +148,12 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
   const [isSavedRecently, setIsSavedRecently] = useState(false);
   const [showTemplatesDropdown, setShowTemplatesDropdown] = useState(false);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+  const [openTabIds, setOpenTabIds] = useState<string[]>([]);
+  const [hydratedTabProjectId, setHydratedTabProjectId] = useState<number | null>(null);
+  const [isQuickOpenOpen, setQuickOpenOpen] = useState(false);
+  const [quickOpenQuery, setQuickOpenQuery] = useState('');
+  const [quickOpenIndex, setQuickOpenIndex] = useState(0);
+  const [dirtyFileIds, setDirtyFileIds] = useState<string[]>([]);
 
   // Terminal state inside Code Studio
   const [terminalInput, setTerminalInput] = useState('');
@@ -156,8 +163,103 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const activeFile = files.find(f => f.id === activeFileId) || files[0];
+  const quickOpenInputRef = useRef<HTMLInputElement>(null);
+  const fileIdsKey = files.map(file => file.id).join('\u0000');
+  const activeFile = files.find(f => f.id === activeFileId);
+  const openTabs = openTabIds
+    .map(id => files.find(file => file.id === id))
+    .filter((file): file is CodeFile => Boolean(file));
   const projectDir = project.repo_path || 'C:\\Workspace\\' + project.title;
+  const quickOpenFiles = files
+    .filter(file => `${file.name} ${file.path}`.toLocaleLowerCase().includes(quickOpenQuery.trim().toLocaleLowerCase()))
+    .slice(0, 40);
+
+  const handleSelectFile = (id: string) => {
+    setOpenTabIds(prev => prev.includes(id) ? prev : [...prev, id]);
+    onSelectFile(id);
+  };
+
+  const markFileDirty = (id: string) => {
+    setDirtyFileIds(prev => prev.includes(id) ? prev : [...prev, id]);
+  };
+
+  const handleCloseTab = async (id: string) => {
+    if (dirtyFileIds.includes(id)) {
+      try {
+        await triggerSave(false);
+      } catch (err) {
+        console.warn('Could not save before closing tab', err);
+        return;
+      }
+    }
+    const closingIndex = openTabIds.indexOf(id);
+    const nextTabs = openTabIds.filter(tabId => tabId !== id);
+    setOpenTabIds(nextTabs);
+    if (activeFileId === id) {
+      const nextActiveId = nextTabs[Math.min(closingIndex, nextTabs.length - 1)] || '';
+      onSelectFile(nextActiveId);
+    }
+  };
+
+  useEffect(() => {
+    if (files.length === 0) return;
+
+    if (hydratedTabProjectId !== project.id) {
+      const tabsKey = `nexus_open_tabs_${project.id}`;
+      const activeKey = `nexus_active_file_${project.id}`;
+      let savedIds: string[] = [];
+      try {
+        const parsed = JSON.parse(localStorage.getItem(tabsKey) || '[]');
+        if (Array.isArray(parsed)) savedIds = parsed.filter((id): id is string => typeof id === 'string');
+      } catch {
+        savedIds = [];
+      }
+
+      const availableIds = new Set(files.map(file => file.id));
+      const nextTabs = savedIds.filter(id => availableIds.has(id));
+      let savedActiveId = '';
+      try {
+        savedActiveId = localStorage.getItem(activeKey) || '';
+      } catch {
+        savedActiveId = '';
+      }
+
+      if (savedActiveId && availableIds.has(savedActiveId) && !nextTabs.includes(savedActiveId)) {
+        nextTabs.push(savedActiveId);
+      }
+      if (nextTabs.length === 0 && activeFileId && availableIds.has(activeFileId)) nextTabs.push(activeFileId);
+      if (nextTabs.length === 0) nextTabs.push(files[0].id);
+
+      setOpenTabIds(nextTabs);
+      setDirtyFileIds([]);
+      setHydratedTabProjectId(project.id);
+      const nextActiveId = savedActiveId && nextTabs.includes(savedActiveId)
+        ? savedActiveId
+        : nextTabs.includes(activeFileId) ? activeFileId : nextTabs[0];
+      if (activeFileId !== nextActiveId) onSelectFile(nextActiveId);
+      return;
+    }
+
+    const availableIds = new Set(files.map(file => file.id));
+    const nextTabs = openTabIds.filter(id => availableIds.has(id));
+    if (activeFileId && availableIds.has(activeFileId) && !nextTabs.includes(activeFileId)) {
+      nextTabs.push(activeFileId);
+    }
+    if (nextTabs.length !== openTabIds.length || nextTabs.some((id, index) => id !== openTabIds[index])) {
+      setOpenTabIds(nextTabs);
+    }
+  }, [project.id, fileIdsKey, hydratedTabProjectId, openTabIds, activeFileId, files, onSelectFile]);
+
+  useEffect(() => {
+    if (hydratedTabProjectId !== project.id) return;
+    try {
+      localStorage.setItem(`nexus_open_tabs_${project.id}`, JSON.stringify(openTabIds));
+      if (activeFileId) localStorage.setItem(`nexus_active_file_${project.id}`, activeFileId);
+      else localStorage.removeItem(`nexus_active_file_${project.id}`);
+    } catch (err) {
+      console.warn('Could not save editor tabs', err);
+    }
+  }, [project.id, hydratedTabProjectId, openTabIds, activeFileId]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -176,10 +278,24 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
         e.preventDefault();
         setIsSidebarOpen(prev => !prev);
       }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'w' && activeFileId) {
+        e.preventDefault();
+        if (!isQuickOpenOpen) handleCloseTab(activeFileId);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        setQuickOpenOpen(true);
+        setQuickOpenQuery('');
+        setQuickOpenIndex(0);
+      }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [isFullscreen]);
+  }, [isFullscreen, activeFileId, openTabIds, isQuickOpenOpen]);
+
+  useEffect(() => {
+    if (isQuickOpenOpen) quickOpenInputRef.current?.focus();
+  }, [isQuickOpenOpen]);
 
   useEffect(() => {
     if (isTerminalOpen) {
@@ -225,6 +341,7 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
       const updatedVal = currentVal.substring(0, start) + '  ' + currentVal.substring(end);
       if (activeFile) {
         onUpdateFileContent(activeFile.id, updatedVal);
+        markFileDirty(activeFile.id);
       }
 
       setTimeout(() => {
@@ -240,7 +357,7 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
     }
   };
 
-  const triggerSave = async () => {
+  const triggerSave = async (notify = true) => {
     if (project.repo_path && activeFile) {
       const diskPath = activeFile.full_path || (project.repo_path.replace(/[\\/]+$/, '') + '\\' + activeFile.path.replace(/\//g, '\\'));
       try {
@@ -250,14 +367,17 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
       }
     }
     await onSaveAll();
+    setDirtyFileIds([]);
     setIsSavedRecently(true);
-    addToast(
-      isRu ? 'Файлы сохранены' : 'Files Saved',
-      project.repo_path
-        ? (isRu ? 'Записано на диск и в проект' : 'Saved to disk and project')
-        : (isRu ? 'Все изменения записаны' : 'All changes saved'),
-      'success'
-    );
+    if (notify) {
+      addToast(
+        isRu ? 'Файлы сохранены' : 'Files Saved',
+        project.repo_path
+          ? (isRu ? 'Записано на диск и в проект' : 'Saved to disk and project')
+          : (isRu ? 'Все изменения записаны' : 'All changes saved'),
+        'success'
+      );
+    }
     setTimeout(() => setIsSavedRecently(false), 2000);
   };
 
@@ -364,6 +484,26 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
     }
   };
 
+  const handleQuickOpenKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setQuickOpenIndex(index => Math.min(index + 1, Math.max(quickOpenFiles.length - 1, 0)));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setQuickOpenIndex(index => Math.max(index - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const file = quickOpenFiles[quickOpenIndex];
+      if (file) {
+        handleSelectFile(file.id);
+        setQuickOpenOpen(false);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setQuickOpenOpen(false);
+    }
+  };
+
   const presets = ['git status', 'git log -n 3 --oneline', 'npm run dev', 'dir'];
 
   return (
@@ -440,6 +580,32 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
 
         {/* Right Action Icons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            type="button"
+            onClick={() => {
+              setQuickOpenQuery('');
+              setQuickOpenIndex(0);
+              setQuickOpenOpen(true);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '4px 9px',
+              backgroundColor: '#16161C',
+              border: '1px solid #25252D',
+              borderRadius: 4,
+              color: '#A78BFA',
+              fontSize: '0.74rem',
+              cursor: 'pointer',
+            }}
+            title={isRu ? 'Быстро открыть файл (Ctrl+P)' : 'Quick Open File (Ctrl+P)'}
+          >
+            <Search size={12} />
+            <span>{isRu ? 'Найти файл' : 'Find File'}</span>
+            <span style={{ color: '#686877', fontSize: '0.66rem' }}>Ctrl+P</span>
+          </button>
+
           {/* Templates */}
           <div style={{ position: 'relative' }}>
             <button
@@ -554,7 +720,7 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
           {/* Save All */}
           <button
             type="button"
-            onClick={triggerSave}
+            onClick={() => triggerSave()}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -563,14 +729,14 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
               backgroundColor: '#16161C',
               border: '1px solid #25252D',
               borderRadius: 4,
-              color: isSavedRecently ? '#10b981' : '#92929F',
+              color: isSavedRecently ? '#10b981' : dirtyFileIds.length ? '#f59e0b' : '#92929F',
               fontSize: '0.74rem',
               cursor: 'pointer',
             }}
             title={isRu ? 'Сохранить (Ctrl+S)' : 'Save (Ctrl+S)'}
           >
-            {isSavedRecently ? <Check size={12} color="#10b981" /> : <Save size={12} />}
-            <span>{isSavedRecently ? (isRu ? 'Сохранено' : 'Saved') : (isRu ? 'Сохранить' : 'Save')}</span>
+            {isSavedRecently ? <Check size={12} color="#10b981" /> : <Save size={12} color={dirtyFileIds.length ? '#f59e0b' : undefined} />}
+            <span>{isSavedRecently ? (isRu ? 'Сохранено' : 'Saved') : dirtyFileIds.length ? (isRu ? `Сохранить · ${dirtyFileIds.length}` : `Save · ${dirtyFileIds.length}`) : (isRu ? 'Сохранить' : 'Save')}</span>
           </button>
 
           {/* Toggle Integrated Terminal */}
@@ -851,7 +1017,7 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
                 return (
                   <div
                     key={file.id}
-                    onClick={() => onSelectFile(file.id)}
+                    onClick={() => handleSelectFile(file.id)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -921,12 +1087,12 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
               userSelect: 'none',
             }}
           >
-            {files.map(file => {
+            {openTabs.map(file => {
               const isActive = file.id === (activeFile?.id || '');
               return (
                 <div
                   key={file.id}
-                  onClick={() => onSelectFile(file.id)}
+                  onClick={() => handleSelectFile(file.id)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -944,32 +1110,41 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
                 >
                   {getFileIcon(file.name)}
                   <span>{file.name}</span>
-                  {files.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={e => {
-                        e.stopPropagation();
-                        onDeleteFile(file.id);
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#686877',
-                        cursor: 'pointer',
-                        padding: 1,
-                        marginLeft: 4,
-                        display: 'flex',
-                        borderRadius: 3,
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
-                      onMouseLeave={e => (e.currentTarget.style.color = '#686877')}
-                    >
-                      <X size={12} />
-                    </button>
+                  {dirtyFileIds.includes(file.id) && (
+                    <span title={isRu ? 'Есть несохранённые изменения' : 'Unsaved changes'} style={{ color: '#f59e0b', fontSize: '0.8rem', lineHeight: 1 }}>●</span>
                   )}
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      handleCloseTab(file.id);
+                    }}
+                    aria-label={isRu ? `Закрыть вкладку ${file.name}` : `Close ${file.name} tab`}
+                    title={isRu ? 'Закрыть вкладку · файл останется в проекте' : 'Close tab · file stays in project'}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#686877',
+                      cursor: 'pointer',
+                      padding: 2,
+                      marginLeft: 4,
+                      display: 'flex',
+                      borderRadius: 3,
+                      flexShrink: 0,
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.color = '#fff')}
+                    onMouseLeave={e => (e.currentTarget.style.color = '#686877')}
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
               );
             })}
+            {openTabs.length === 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', padding: '0 14px', color: '#686877', fontSize: '0.72rem' }}>
+                {isRu ? 'Нет открытых вкладок · выберите файл слева' : 'No open tabs · choose a file from the sidebar'}
+              </div>
+            )}
           </div>
 
           {/* Breadcrumb Path Bar */}
@@ -1039,6 +1214,7 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
               onChange={e => {
                 if (activeFile) {
                   onUpdateFileContent(activeFile.id, e.target.value);
+                  markFileDirty(activeFile.id);
                 }
                 updateCursorPosition(e.target);
               }}
@@ -1357,6 +1533,88 @@ export const CodeStudioTab: React.FC<CodeStudioTabProps> = ({
           </div>
         </div>
       </div>
+
+      {isQuickOpenOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setQuickOpenOpen(false)}
+          style={{ zIndex: 1200, alignItems: 'flex-start', paddingTop: '12vh' }}
+        >
+          <div
+            onClick={event => event.stopPropagation()}
+            style={{
+              width: 'min(620px, calc(100vw - 32px))',
+              maxHeight: '70vh',
+              overflow: 'hidden',
+              background: '#141419',
+              border: '1px solid rgba(167, 139, 250, 0.35)',
+              borderRadius: 12,
+              boxShadow: '0 24px 80px rgba(0, 0, 0, 0.65)',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid #25252D' }}>
+              <Search size={17} color="#A78BFA" />
+              <input
+                ref={quickOpenInputRef}
+                type="search"
+                value={quickOpenQuery}
+                onChange={event => {
+                  setQuickOpenQuery(event.target.value);
+                  setQuickOpenIndex(0);
+                }}
+                onKeyDown={handleQuickOpenKeyDown}
+                placeholder={isRu ? 'Введите имя или путь файла…' : 'Type a file name or path…'}
+                aria-label={isRu ? 'Быстрый поиск файла' : 'Quick file search'}
+                style={{ flex: 1, minWidth: 0, padding: '7px 0', border: 0, outline: 0, color: '#F1F1F5', background: 'transparent', fontSize: '0.92rem' }}
+              />
+              <kbd style={{ padding: '3px 6px', color: '#92929F', border: '1px solid #33323d', borderRadius: 4, fontSize: '0.68rem' }}>ESC</kbd>
+            </div>
+
+            <div style={{ overflowY: 'auto', padding: 6 }}>
+              {quickOpenFiles.length === 0 ? (
+                <div style={{ padding: '22px 14px', color: '#92929F', textAlign: 'center', fontSize: '0.82rem' }}>
+                  {isRu ? 'Файлы не найдены' : 'No files found'}
+                </div>
+              ) : quickOpenFiles.map((file, index) => (
+                <button
+                  key={file.id}
+                  type="button"
+                  onMouseEnter={() => setQuickOpenIndex(index)}
+                  onClick={() => {
+                    handleSelectFile(file.id);
+                    setQuickOpenOpen(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '9px 10px',
+                    border: 0,
+                    borderRadius: 7,
+                    color: index === quickOpenIndex ? '#F1F1F5' : '#C4C4CE',
+                    textAlign: 'left',
+                    background: index === quickOpenIndex ? 'rgba(139, 108, 255, 0.14)' : 'transparent',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {getFileIcon(file.name)}
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8rem' }}>{file.path || file.name}</span>
+                  {openTabIds.includes(file.id) && <span style={{ color: '#8B6CFF', fontSize: '0.66rem' }}>{isRu ? 'открыт' : 'open'}</span>}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, padding: '8px 12px', borderTop: '1px solid #25252D', color: '#777785', fontSize: '0.67rem' }}>
+              <span>↑↓ {isRu ? 'выбрать' : 'navigate'}</span>
+              <span>↵ {isRu ? 'открыть' : 'open'}</span>
+              <span>Esc {isRu ? 'закрыть' : 'close'}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* New File Modal */}
       {isNewFileModalOpen && (

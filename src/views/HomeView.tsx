@@ -16,6 +16,7 @@ import * as api from '../api';
 import type { Project, Task } from '../types';
 import { GitHubModal } from '../components/projects/GitHubModal';
 import { GithubIcon } from '../components/GithubIcon';
+import './HomeView.css';
 
 export const HomeView: React.FC = () => {
   const {
@@ -29,6 +30,7 @@ export const HomeView: React.FC = () => {
 
   const isRu = language === 'ru';
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectQuery, setProjectQuery] = useState('');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
 
@@ -36,6 +38,11 @@ export const HomeView: React.FC = () => {
   const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState('');
   const [newProjectDesc, setNewProjectDesc] = useState('');
+
+  const filteredProjects = projects.filter(project => {
+    const query = projectQuery.trim().toLocaleLowerCase();
+    return !query || `${project.title} ${project.description || ''}`.toLocaleLowerCase().includes(query);
+  });
 
   useEffect(() => {
     loadData();
@@ -116,6 +123,7 @@ export const HomeView: React.FC = () => {
 
   return (
     <div
+      className="home-view"
       style={{
         maxWidth: 1280,
         margin: '0 auto',
@@ -126,7 +134,7 @@ export const HomeView: React.FC = () => {
       }}
     >
       {/* 1. Header / Welcome Ribbon */}
-      <div
+      <div className="home-hero"
         style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -261,6 +269,28 @@ export const HomeView: React.FC = () => {
           </button>
         </div>
 
+        {projects.length > 0 && (
+          <input
+            type="search"
+            value={projectQuery}
+            onChange={event => setProjectQuery(event.target.value)}
+            placeholder={isRu ? 'Поиск по проектам…' : 'Search projects…'}
+            aria-label={isRu ? 'Поиск по проектам' : 'Search projects'}
+            style={{
+              width: '100%',
+              height: 36,
+              marginBottom: 12,
+              padding: '0 12px',
+              background: '#111115',
+              border: '1px solid #25252D',
+              borderRadius: 6,
+              color: '#F1F1F5',
+              fontSize: '0.8rem',
+              outlineColor: '#8B6CFF',
+            }}
+          />
+        )}
+
         {projects.length === 0 ? (
           <div
             style={{
@@ -332,8 +362,12 @@ export const HomeView: React.FC = () => {
               gap: 14,
             }}
           >
-            {projects.map(p => (
-              <div
+            {filteredProjects.length === 0 ? (
+              <p style={{ gridColumn: '1 / -1', padding: 24, color: '#92929F', textAlign: 'center' }}>
+                {isRu ? 'Проекты не найдены' : 'No matching projects'}
+              </p>
+            ) : filteredProjects.map(p => (
+              <div className="home-project-card"
                 key={p.id}
                 onClick={() => handleOpenProject(p.id)}
                 style={{
@@ -535,7 +569,7 @@ export const HomeView: React.FC = () => {
       </div>
 
       {/* 3. Bottom Split: Urgent Tasks & Hardware Monitoring */}
-      <div
+      <div className="home-support-grid"
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
@@ -543,7 +577,7 @@ export const HomeView: React.FC = () => {
         }}
       >
         {/* Urgent Project Tasks */}
-        <div
+        <div className="home-support-card"
           style={{
             backgroundColor: '#111115',
             border: '1px solid #25252D',
@@ -584,7 +618,7 @@ export const HomeView: React.FC = () => {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {tasks.map(t => (
-                <div
+                <div className="home-task-row"
                   key={t.id}
                   style={{
                     padding: '8px 10px',
@@ -652,7 +686,7 @@ export const HomeView: React.FC = () => {
 
         {/* Minimal Hardware Monitoring */}
         {systemStats && (
-          <div
+          <div className="home-support-card home-telemetry-card"
             style={{
               backgroundColor: '#111115',
               border: '1px solid #25252D',
@@ -912,3 +946,4 @@ export const HomeView: React.FC = () => {
     </div>
   );
 };
+
