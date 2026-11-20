@@ -16,9 +16,39 @@
   <p><sub>⚡ Не требует установки: просто скачайте <code>NEXUS.exe</code> и запускайте сразу на Windows 11.</sub></p>
 </div>
 
+## Screenshots
+
+<p><em>Названия проектов и локальные пути на скриншотах заменены демонстрационными значениями. / Project names and local paths are anonymized.</em></p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/home-dashboard.png" alt="NEXUS project dashboard" width="100%" /></td>
+    <td width="50%"><img src="docs/screenshots/code-studio.png" alt="NEXUS Code Studio with file tree and tabs" width="100%" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Главная панель проектов / Project dashboard</sub></td>
+    <td align="center"><sub>Редактор кода и файловые вкладки / Code editor and file tabs</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/ai-agent.png" alt="NEXUS AI Agent workspace" width="100%" /></td>
+    <td width="50%"><img src="docs/screenshots/git-workflow.png" alt="NEXUS Git workflow and commit history" width="100%" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>AI-агент и контекст проекта / AI Agent and project context</sub></td>
+    <td align="center"><sub>Git, коммиты и история / Git, commits, and history</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/kanban-board.png" alt="NEXUS Kanban board with four workflow columns" width="100%" /></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>Kanban-доска: планирование и этапы задач / Kanban board for planning and task stages</sub></td>
+  </tr>
+</table>
+
 ---
 
 ## Содержание / Table of Contents
+- [Screenshots](#screenshots)
 - [Русская версия (Russian)](#-русская-версия)
   - [Обзор](#обзор)
   - [Ключевые возможности](#ключевые-возможности)
