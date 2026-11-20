@@ -4,6 +4,16 @@
   <img src="public/icon.png" width="96" height="96" alt="NEXUS Icon" />
   <p><strong>Современная профессиональная среда разработки и управления проектами с автономным AI-агентом</strong></p>
   <p><em>Modern, minimalist, high-performance project studio and AI-assisted workspace built with Tauri 2, Rust, and React 19.</em></p>
+  <br/>
+
+  <a href="https://github.com/yto4ka002/nexus/releases/download/v1.0.0/NEXUS.exe">
+    <img src="https://img.shields.io/badge/Скачать%20Portable-NEXUS.exe-8B6CFF?style=for-the-badge&logo=windows&logoColor=white" alt="Скачать NEXUS.exe" />
+  </a>
+  &nbsp;
+  <a href="https://github.com/yto4ka002/nexus/releases/download/v1.0.0/NEXUS_Setup.exe">
+    <img src="https://img.shields.io/badge/Скачать%20Установщик-NEXUS__Setup.exe-5B21B6?style=for-the-badge&logo=windows11&logoColor=white" alt="Скачать Installer" />
+  </a>
+  <p><sub>⚡ Не требует установки: просто скачайте <code>NEXUS.exe</code> и запускайте сразу на Windows 11.</sub></p>
 </div>
 
 ---
