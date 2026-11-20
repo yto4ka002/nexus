@@ -21,6 +21,7 @@ import {
   FolderPlus,
   FolderOpen,
   ExternalLink,
+  X,
 } from 'lucide-react';
 import { GithubIcon } from '../components/GithubIcon';
 import { useApp } from '../context/AppContext';
@@ -304,18 +305,24 @@ export const ProjectsView: React.FC = () => {
     showConfirm(
       isRu ? 'Удалить проект?' : 'Delete Project?',
       isRu
-        ? `Вы уверены, что хотите удалить «${p.title}» и все его задачи?`
-        : `Are you sure you want to delete "${p.title}"?`,
+        ? `Вы уверены, что хотите удалить «${p.title}» и все его данные из NEXUS?`
+        : `Are you sure you want to delete "${p.title}" and all its data from NEXUS?`,
       async () => {
-        await api.deleteProject(p.id);
-        addToast(isRu ? 'Проект удален' : 'Project deleted', p.title, 'info');
-        const remaining = projects.filter(item => item.id !== p.id);
-        setProjects(remaining);
-        if (remaining.length > 0) {
-          selectProject(remaining[0]);
-        } else {
-          setActiveProject(null);
-          setSelectedProjectId(null);
+        try {
+          await api.deleteProject(p.id);
+          addToast(isRu ? 'Проект удален' : 'Project deleted', p.title, 'info');
+          const remaining = projects.filter(item => item.id !== p.id);
+          setProjects(remaining);
+          if (remaining.length > 0) {
+            selectProject(remaining[0]);
+          } else {
+            setActiveProject(null);
+            setSelectedProjectId(null);
+            setCodeFiles([]);
+            setTasks([]);
+          }
+        } catch (err: any) {
+          addToast(isRu ? 'Ошибка удаления' : 'Delete error', String(err), 'error');
         }
       },
       true,
@@ -495,18 +502,12 @@ export const ProjectsView: React.FC = () => {
           </span>
 
           {projects.map(p => (
-            <button
+            <div
               key={p.id}
-              onClick={() => selectProject(p)}
               style={{
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
-                gap: 7,
-                padding: '5px 12px',
                 borderRadius: 7,
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                cursor: 'pointer',
                 border:
                   activeProject?.id === p.id
                     ? '1px solid rgba(139, 92, 246, 0.45)'
@@ -515,20 +516,68 @@ export const ProjectsView: React.FC = () => {
                   activeProject?.id === p.id
                     ? 'rgba(139, 92, 246, 0.2)'
                     : 'rgba(255, 255, 255, 0.02)',
-                color: activeProject?.id === p.id ? '#fff' : 'var(--text-muted)',
-                whiteSpace: 'nowrap',
+                padding: '2px 4px 2px 10px',
+                transition: 'all 0.15s ease',
               }}
             >
-              <span
+              <button
+                type="button"
+                onClick={() => selectProject(p)}
                 style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: '50%',
-                  backgroundColor: p.cover_color || '#8b5cf6',
+                  background: 'transparent',
+                  border: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  padding: '4px 3px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  color: activeProject?.id === p.id ? '#fff' : 'var(--text-muted)',
+                  whiteSpace: 'nowrap',
                 }}
-              />
-              <span>{p.title}</span>
-            </button>
+              >
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    backgroundColor: p.cover_color || '#8b5cf6',
+                  }}
+                />
+                <span>{p.title}</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteProject(p);
+                }}
+                title={isRu ? `Удалить проект «${p.title}»` : `Delete "${p.title}"`}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '3px',
+                  marginLeft: 3,
+                  borderRadius: 4,
+                  color: '#686877',
+                  display: 'flex',
+                  alignItems: 'center',
+                  transition: 'all 0.12s ease',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.color = '#f87171';
+                  e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.18)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.color = '#686877';
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                <X size={12} />
+              </button>
+            </div>
           ))}
         </div>
 
@@ -757,6 +806,33 @@ export const ProjectsView: React.FC = () => {
                   title={isRu ? 'Свойства проекта' : 'Project settings'}
                 >
                   <Edit2 size={13} />
+                </button>
+
+                <button
+                  onClick={() => handleDeleteProject(activeProject)}
+                  className="btn btn-secondary btn-sm"
+                  title={isRu ? 'Удалить проект' : 'Delete Project'}
+                  style={{
+                    color: '#f87171',
+                    borderColor: 'rgba(239, 68, 68, 0.35)',
+                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
+                    e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)';
+                    e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+                  }}
+                >
+                  <Trash2 size={13} color="#f87171" />
+                  <span style={{ fontSize: '0.74rem', fontWeight: 600 }}>
+                    {isRu ? 'Удалить' : 'Delete'}
+                  </span>
                 </button>
               </div>
             </div>
@@ -1405,17 +1481,51 @@ export const ProjectsView: React.FC = () => {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => setProjectModalOpen(false)}
-                >
-                  {isRu ? 'Отмена' : 'Cancel'}
-                </button>
-                <button type="submit" className="btn btn-primary btn-sm">
-                  {isRu ? 'Сохранить' : 'Save'}
-                </button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                {editingProject ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const p = editingProject;
+                      setProjectModalOpen(false);
+                      handleDeleteProject(p);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '7px 12px',
+                      backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                      border: '1px solid rgba(239, 68, 68, 0.35)',
+                      borderRadius: 6,
+                      color: '#f87171',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.22)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)';
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    <span>{isRu ? 'Удалить проект' : 'Delete Project'}</span>
+                  </button>
+                ) : <div />}
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setProjectModalOpen(false)}
+                  >
+                    {isRu ? 'Отмена' : 'Cancel'}
+                  </button>
+                  <button type="submit" className="btn btn-primary btn-sm">
+                    {isRu ? 'Сохранить' : 'Save'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

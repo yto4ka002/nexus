@@ -9,6 +9,7 @@ import {
   Layers,
   Sparkles,
   ArrowUpRight,
+  Trash2,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import * as api from '../api';
@@ -22,6 +23,7 @@ export const HomeView: React.FC = () => {
     setActiveSection,
     setSelectedProjectId,
     addToast,
+    showConfirm,
     language,
   } = useApp();
 
@@ -55,6 +57,27 @@ export const HomeView: React.FC = () => {
   const handleOpenProject = (id: number) => {
     setSelectedProjectId(id);
     setActiveSection('projects');
+  };
+
+  const handleDeleteProject = (e: React.MouseEvent, p: Project) => {
+    e.stopPropagation();
+    showConfirm(
+      isRu ? 'Удалить проект?' : 'Delete Project?',
+      isRu
+        ? `Вы уверены, что хотите удалить «${p.title}» из NEXUS?`
+        : `Are you sure you want to delete "${p.title}" from NEXUS?`,
+      async () => {
+        try {
+          await api.deleteProject(p.id);
+          addToast(isRu ? 'Проект удален' : 'Project deleted', p.title, 'info');
+          setProjects(prev => prev.filter(item => item.id !== p.id));
+        } catch (err: any) {
+          addToast(isRu ? 'Ошибка' : 'Error', String(err), 'error');
+        }
+      },
+      true,
+      isRu ? 'Удалить' : 'Delete'
+    );
   };
 
   const handleToggleTask = async (task: Task) => {
@@ -462,18 +485,48 @@ export const HomeView: React.FC = () => {
                     )}
                   </div>
 
-                  <span
-                    style={{
-                      fontSize: '0.72rem',
-                      color: '#8B6CFF',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 3,
-                    }}
-                  >
-                    {isRu ? 'Открыть' : 'Open'} <ArrowUpRight size={12} />
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteProject(e, p)}
+                      title={isRu ? `Удалить проект «${p.title}»` : `Delete "${p.title}"`}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#686877',
+                        cursor: 'pointer',
+                        padding: '3px 6px',
+                        borderRadius: 4,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: '0.7rem',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.color = '#f87171';
+                        e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.color = '#686877';
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        color: '#8B6CFF',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 3,
+                      }}
+                    >
+                      {isRu ? 'Открыть' : 'Open'} <ArrowUpRight size={12} />
+                    </span>
+                  </div>
                 </div>
               </div>
             ))}

@@ -9,6 +9,7 @@ import {
   Square,
   X,
   Bot,
+  Trash2,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import * as api from '../api';
@@ -22,6 +23,8 @@ export const Header: React.FC = () => {
     setSelectedProjectId,
     language,
     setLanguage,
+    showConfirm,
+    addToast,
   } = useApp();
 
   const isRu = language === 'ru';
@@ -38,6 +41,31 @@ export const Header: React.FC = () => {
     setSelectedProjectId(id);
     setActiveSection('projects');
     setIsProjectDropdownOpen(false);
+  };
+
+  const handleDeleteProjectFromHeader = (e: React.MouseEvent, p: Project) => {
+    e.stopPropagation();
+    showConfirm(
+      isRu ? 'Удалить проект?' : 'Delete Project?',
+      isRu
+        ? `Вы уверены, что хотите удалить «${p.title}» из NEXUS?`
+        : `Are you sure you want to delete "${p.title}" from NEXUS?`,
+      async () => {
+        try {
+          await api.deleteProject(p.id);
+          addToast(isRu ? 'Проект удален' : 'Project deleted', p.title, 'info');
+          const remaining = projects.filter(item => item.id !== p.id);
+          setProjects(remaining);
+          if (selectedProjectId === p.id) {
+            setSelectedProjectId(remaining[0]?.id || null);
+          }
+        } catch (err: any) {
+          addToast(isRu ? 'Ошибка удаления' : 'Delete error', String(err), 'error');
+        }
+      },
+      true,
+      isRu ? 'Удалить' : 'Delete'
+    );
   };
 
   const handleMinimize = () => {
@@ -245,6 +273,7 @@ export const Header: React.FC = () => {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
+                        gap: 8,
                       }}
                       onMouseEnter={e => {
                         e.currentTarget.style.backgroundColor = 'rgba(139, 108, 255, 0.12)';
@@ -256,10 +285,58 @@ export const Header: React.FC = () => {
                             : 'transparent';
                       }}
                     >
-                      <span style={{ fontWeight: 600 }}>{p.title}</span>
-                      <span style={{ fontSize: '0.7rem', color: '#686877' }}>
-                        {p.progress}%
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            backgroundColor: p.cover_color || '#8b5cf6',
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span
+                          style={{
+                            fontWeight: 600,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: 130,
+                          }}
+                        >
+                          {p.title}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: '0.7rem', color: '#686877' }}>
+                          {p.progress}%
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteProjectFromHeader(e, p)}
+                          title={isRu ? `Удалить «${p.title}»` : `Delete "${p.title}"`}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            padding: '2px 4px',
+                            cursor: 'pointer',
+                            color: '#686877',
+                            borderRadius: 3,
+                            display: 'flex',
+                            alignItems: 'center',
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.color = '#f87171';
+                            e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.color = '#686877';
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                   <div

@@ -130,6 +130,9 @@ pub fn update_project(id: i64, payload: ProjectPayload, db: State<'_, DbState>) 
 #[tauri::command]
 pub fn delete_project(id: i64, db: State<'_, DbState>) -> Result<(), String> {
     let conn = db.conn.lock().unwrap();
+    let _ = conn.execute("DELETE FROM tasks WHERE project_id = ?1", params![id]);
+    let _ = conn.execute("DELETE FROM activities WHERE project_id = ?1", params![id]);
+    let _ = conn.execute("DELETE FROM checkpoints WHERE project_id = ?1", params![id]);
     conn.execute("DELETE FROM projects WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(())
